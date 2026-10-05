@@ -1,0 +1,17 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Raw data: downloaded on first run, subject to the providers' terms
+data/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
