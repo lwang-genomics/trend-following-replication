@@ -14,6 +14,7 @@ TREND_C = DALE_METHOD_COLORS["RegVelo"]  # primary series: Set1 blue
 PAPER_C = DALE_NONSIG
 OOS_C = DALE_SIG
 SECTOR_COLORS = dict(zip(SECTORS, [DALE_OKABE_ITO[i] for i in (0, 2, 4, 6)]))
+OVERLAP_ALPHA = 0.7  # lines that cross or coincide stay visible through each other
 SECTOR_LSTYLES = dict(zip(SECTORS, ["solid", "dashed", "dotted", "dashdot"]))
 
 
@@ -151,12 +152,12 @@ def averaging(mean: dict[str, float], name: str) -> None:
 
 def long_us(cum: pd.DataFrame, name: str) -> None:
     fig, ax = plt.subplots()
+    tot = cum.sum(axis=1)
+    ax.plot(tot.index, tot, color=TREND_C, linewidth=DALE_LINE_EMPH, alpha=OVERLAP_ALPHA, label="Both")
     for c, color, ls, label in [("EQ_US_1871", SECTOR_COLORS["Indices"], "solid", "S&P composite"),
                                 ("BD_US_1871", SECTOR_COLORS["Bonds"], "dashed", "US 10y bond")]:
         s = cum[c].dropna()
         ax.plot(s.index, s, color=color, linestyle=ls, linewidth=DALE_LINE_WIDTH, label=label)
-    tot = cum.sum(axis=1)
-    ax.plot(tot.index, tot, color=TREND_C, linewidth=DALE_LINE_EMPH, label="Both")
     ax.set_ylabel("Cumulative trend P&L (σ units)")
     legend_top(ax, ncol=3)
     style_dates(ax, cum.dropna(how="all").index, base=20)
@@ -177,7 +178,7 @@ def daily_equity(series: dict[str, pd.Series], split: str, name: str) -> None:
     fig, ax = plt.subplots()
     for k, s in reversed(list(series.items())):
         lw = DALE_LINE_WIDTH if _rule_color(k) == DALE_NONSIG else DALE_LINE_EMPH
-        ax.plot(s.index, s.cumsum() * 100, color=_rule_color(k), linewidth=lw, label=k)
+        ax.plot(s.index, s.cumsum() * 100, color=_rule_color(k), linewidth=lw, alpha=OVERLAP_ALPHA, label=k)
     end = max(s.index[-1] for s in series.values())
     shade_oos(ax, split, end)
     ax.set_ylabel("Cumulative net P&L\n(% of capital, at 10% vol)")
@@ -263,7 +264,8 @@ def benchmark(fund: pd.Series, rules: dict[str, pd.Series], fund_name: str, name
     fig, ax = plt.subplots()
     ax.plot(fund.index, fund.cumsum() * 100, color=FUND_C, linewidth=DALE_LINE_EMPH, label=fund_name)
     for k, s in rules.items():
-        ax.plot(s.index, s.cumsum() * 100, color=_rule_color(k), linewidth=DALE_LINE_WIDTH, label=k)
+        ax.plot(s.index, s.cumsum() * 100, color=_rule_color(k), linewidth=DALE_LINE_WIDTH, alpha=OVERLAP_ALPHA,
+                label=k)
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_ylabel("Cumulative excess return\n(%, rules at the fund's vol)")
     legend_top(ax, ncol=3)
@@ -393,11 +395,14 @@ def overlay_quintiles(cond: dict, labels: dict, name: str) -> None:
 
 def overlay_drawdowns(book: pd.Series, combo: pd.Series, label: str, name: str) -> None:
     fig, ax = plt.subplots()
-    for s, color, lw, lab in ((book, FUND_C, DALE_LINE_WIDTH, "Inverse-vol book (10% vol)"),
+    def drawdown(x: pd.Series) -> pd.Series:
+        cum = np.log1p(x).cumsum()
+        return (np.exp(cum - cum.cummax()) - 1) * 100
+
+    for x, color, lw, lab in ((book, FUND_C, DALE_LINE_WIDTH, "Inverse-vol book (10% vol)"),
                               (combo, TREND_C, DALE_LINE_EMPH, f"Book + {label} (10% vol)")):
-        cum = np.log1p(s).cumsum()
-        dd = (np.exp(cum - cum.cummax()) - 1) * 100
-        ax.plot(dd.index, dd, color=color, linewidth=lw, label=lab)
+        dd = drawdown(x)
+        ax.plot(dd.index, dd, color=color, linewidth=lw, alpha=OVERLAP_ALPHA, label=lab)
     ax.set_ylabel("Drawdown (%)")
     legend_top(ax, ncol=2)
     style_dates(ax, book.index)
@@ -409,7 +414,7 @@ def protection(strat: dict[str, pd.Series], name: str) -> None:
     colors = [FUND_C, THEORY_C, CORE_C, TREND_C]
     for (k, s), c in zip(strat.items(), colors):
         ax.plot(s.index, np.log1p(s).cumsum() * 100, color=c, linewidth=DALE_LINE_WIDTH if c == FUND_C else
-                DALE_LINE_EMPH, label=k)
+                DALE_LINE_EMPH, alpha=OVERLAP_ALPHA, label=k)
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_ylabel("Cumulative excess log return (%)")
     ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=12)
