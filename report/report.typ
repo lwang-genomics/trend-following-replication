@@ -522,7 +522,7 @@ rules are run here on futures from 1990, and a trend overlay is added:
 - the overlay is scaled to 10% ex-ante volatility, and every combination is rescaled to 10% ex-ante volatility, so
   that all portfolios carry the same risk.
 
-#mtable(CT.overlay, [The inverse-vol book with and without a trend overlay, #C.overlay.start to #C.overlay.end; combinations rescaled to 10% ex-ante volatility. Quarterly CVaR: mean of the worst 5% of quarters.], size: 7.5pt) <tbl-overlay>
+#mtable(CT.overlay, [The inverse-vol book with and without a trend overlay, #C.overlay.start to #C.overlay.end. Combinations are rescaled to 10% ex-ante volatility. Quarterly CVaR: mean of the worst 5% of quarters.], size: 7.5pt) <tbl-overlay>
 
 #mtable(CT.stress, [Returns over market stress episodes: the book, and each overlay on its own at 10% volatility.], size: 8pt) <tbl-stress>
 
