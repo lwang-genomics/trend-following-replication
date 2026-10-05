@@ -34,7 +34,10 @@
 #show figure: set block(breakable: false, above: 1.2em, below: 1.2em)
 #set figure(gap: 0.6em)
 
-#let fig(path, caption) = figure(image("../figures/" + path, width: 100%), caption: caption)
+// Figure set used in this PDF: "report/" = figures sized for the page (default); "" = the slide versions
+// shown in the README (the previous layout of this report).
+#let figset = "report/"
+#let fig(path, caption) = figure(image("../figures/" + figset + path, width: 100%), caption: caption)
 #let mtable(t, caption, size: 9pt, left-cols: 1, left-also: (), columns: auto) = figure(
   text(size: size)[#set par(justify: false); #table(
     columns: if columns == auto { t.header.len() } else { columns },
@@ -53,101 +56,63 @@
 
 #align(center)[
   #text(size: 19pt)[Trend Following: Replication, Practitioner Rules \ and Tail Protection] \
-  #v(0.3em)
-  #text(size: 12pt)[Part I: Lempérière, Deremble, Seager, Potters & Bouchaud (2014), "Two centuries of trend
-    following", reproduced on free data and tested after publication. \
-    Part II: the core model of A. Clenow's _Following the Trend_ (2013) against the paper's signal, on daily futures. \
-    Part III: Dao et al. (2016), "Tail protection for long investors: trend convexity at work", and trend as an
-    overlay on an inverse-volatility portfolio] \
-  #v(0.3em)
-  #text(size: 10pt, fill: luma(110))[Liangxi Wang · monthly data #F.sample · daily futures 1990-01 → 2024-03 · October 2026 \
+  #v(0.5em)
+  #text(size: 10pt, fill: luma(110))[Liangxi Wang · October 2026 ·
     #link("https://github.com/lwang-genomics/trend-following-replication")[github.com/lwang-genomics/trend-following-replication]]
 ]
-#v(1em)
-#outline(depth: 1, indent: auto)
+#v(0.8em)
+#block(inset: (x: 1.2em), [
+  #text(weight: "bold")[Abstract.] This note reproduces two papers by Capital Fund Management researchers on trend
+  following, using only free public data, and tests the practitioner's version of the strategy.
+  *Part I* replicates Lempérière et al. (2014), "Two centuries of trend following": on 27 markets the trend Sharpe
+  ratio for 1960–2013 is #num(F.headline.sr) (published: 0.78), and #num(F.oos.sr_out) over the twelve years after
+  publication. *Part II* runs the core model of A. Clenow's _Following the Trend_ on #DF.n_markets daily futures,
+  net of costs: it earns about the same as the paper's signal (Sharpe #num(R("Clenow core").sr_net_in) vs
+  #num(R("Paper EMA, 100 d").sr_net_in), 1990–2013) and is mostly the same bet. *Part III* replicates the
+  convexity results of Dao et al. (2016) and uses trend as an overlay on an inverse-volatility portfolio: at equal
+  risk it raises the Sharpe ratio from #num(OV("Book alone").sr) to #num(OV("Book + 1 × diversified trend τ=180").sr),
+  and protects in bear markets that unfold over months, not in crashes that last a few weeks.
+])
+#v(0.2em)
+#figure(image("../figures/" + figset + "fig01_aggregate_pnl.png", width: 84%),
+  caption: [Two centuries of trend following, replicated: aggregate trend P&L on 27 markets (monthly, σ units) and the long-only drift, 1960–2026. Shaded: after the paper was published.])
+#figure(image("../figures/" + figset + "fig20_overlay_drawdowns.png", width: 84%),
+  caption: [Trend as tail protection: drawdowns of the inverse-volatility portfolio alone and with a diversified trend overlay, both at 10% volatility, 1991–2024.])
 #pagebreak()
+#outline(depth: 1, indent: auto)
 
-= Summary
+= Key results
 
-Lempérière et al. (2014, Capital Fund Management) show that a minimal trend-following rule earns significant
-excess returns across commodities, currencies, stock indices and bonds: a t-statistic of about 5.9 on futures since
-1960, and about 10 on spot data back to 1800. This note re-runs their rule on the same 27-market universe using only
-free public data, checks how the data affect the result, and then asks the question a published result invites:
-*did it hold after publication?*
+*Part I: the paper on free monthly data* (@sec-paper to @sec-us)
+- *It replicates.* 1960–2013 Sharpe #num(F.headline.sr) (paper 0.78), t = #num(F.headline.t, d: 1) (5.7),
+  drift-removed t\* = #num(F.headline.t_debiased, d: 1) (5.0); currencies and bonds match, and the signal saturates
+  as reported (s\* = #num(F.saturation.tanh_s_star) vs 0.89).
+- *After publication it is weaker but not rejected:* Sharpe #num(F.oos.sr_out) in 2014–2026; a bootstrap of the
+  in-sample history gives a #num(F.oos.p_oos_le_observed * 100, d: 0)% chance of a period this weak.
+- *Three data traps* change the answer: monthly averages fake a trend unless the position is lagged, administered
+  prices need a stale-price filter, and interpolated history must be dropped.
 
-- *The result replicates.* For 1960–2013 the aggregate Sharpe ratio is #num(F.headline.sr) (paper: 0.78), with
-  t = #num(F.headline.t, d: 1) (5.7) and a drift-removed t\* = #num(F.headline.t_debiased, d: 1) (5.0). The trend P&L
-  is only #num(F.headline.corr_trend_long) correlated with the long-only drift (paper: 0.15). Currencies and bonds
-  match the paper closely. Commodities are much weaker on spot prices (Sharpe #num(F.sectors.Commodities.sr) vs
-  0.80), as the paper itself anticipates, because spot data miss the futures' carry.
-- *Saturation replicates.* A tanh fit of the next move on the signal saturates at
-  s\* = #num(F.saturation.tanh_s_star) (paper: 0.89), beats the linear fit (F = #num(F.saturation.f_stat, d: 1)),
-  and the cubic term is negative, as reported.
-- *After publication the effect is weaker.* Over 2014–2026 the Sharpe ratio is #num(F.oos.sr_out)
-  (t = #num(F.oos.t_out, d: 1)), against #num(F.oos.sr_in) in-sample. A block bootstrap of the in-sample months puts
-  the probability of an out-of-sample Sharpe this low at #num(F.oos.p_oos_le_observed * 100, d: 0)%. So the result is
-  weaker but not statistically rejected, and every n gives the same picture.
-- *Two data traps are documented and avoided.* Most free series are *monthly averages*. Trading them the very next
-  month manufactures a fake trend (Working, 1960). The paper's equation, which holds the position one month later,
-  removes the artefact, and on markets with month-end data it reproduces the month-end result exactly
-  (Sharpe #num(F.averaging.avg1) vs #num(F.averaging.eom0)). *Administered prices* (grain support, oil price
-  controls) need a stale-price filter; without one, a single corn observation from 1972 (−467σ) cuts the
-  1960–2013 Sharpe ratio from 0.82 to 0.34.
-- *150 years of US data* (Shiller, from 1873) give a trend Sharpe of #num(F.long_us.sr) with
-  t = #num(F.long_us.t, d: 1), positive in every 50-year block.
+*Part II: Clenow's rules vs the paper's signal, daily futures* (@sec-p2 to @sec-spot)
+- *Same bet.* Net Sharpe #num(R("Clenow core").sr_net_in) vs #num(R("Paper EMA, 100 d").sr_net_in) before 2014,
+  #num(R("Clenow core").sr_net_post) vs #num(R("Paper EMA, 100 d").sr_net_post) after; monthly correlation
+  #num(R("Clenow core").corr_paper), and neither has a significant alpha over the other.
+- *The stop changes the shape, not the edge:* at equal volatility, drawdown #pc(-R("Clenow core").maxdd_10, d: 0)
+  vs #pc(-R("Paper EMA, 100 d").maxdd_10, d: 0) and monthly skew #num(R("Clenow core").skew_m) vs
+  #num(R("Paper EMA, 100 d").skew_m). All 30 parameter settings tested are profitable, but the best ones before
+  2014 were not the best after.
+- *Part I's weak commodities are mostly a data effect:* on the same seven commodities the trend Sharpe is
+  #num(DF.spot_vs_futures.all.spot) on averaged spot prices and #num(DF.spot_vs_futures.all.fut0) on month-end
+  futures.
 
-Part II takes the practitioner's side. Clenow's _Following the Trend_ argues that a simple, diversified trend
-model with a moving-average filter, breakout entries, a trailing stop and volatility sizing captures much of what
-professional trend followers earn, and that the exact rule matters less than diversification and risk sizing. The
-model is run on #DF.n_markets daily back-adjusted futures (1990 to March 2024, net of costs) next to the paper's
-signal on the same data.
-
-- *Both work, and they are mostly the same bet.* Net Sharpe ratios for 1990–2013 are #num(R("Clenow core").sr_net_in)
-  (Clenow) and #num(R("Paper EMA, 100 d").sr_net_in) (paper's EMA, 100 days ≈ 5 months), and
-  #num(R("Clenow core").sr_net_post) and #num(R("Paper EMA, 100 d").sr_net_post) for 2014–2024. Their monthly
-  returns are #num(R("Clenow core").corr_paper) correlated, and neither has a significant alpha over the other
-  (t = #num(SP("Clenow core on paper EMA (100 d) | 1990–2013").alpha_t, d: 1) and
-  #num(SP("Paper EMA (100 d) on Clenow core | 1990–2013").alpha_t, d: 1)).
-- *The stop changes the shape, not the edge.* Clenow's model is in the market #num(R("Clenow core").in_market * 100, d: 0)%
-  of the time. At equal volatility its worst drawdown is #num(-R("Clenow core").maxdd_10 * 100, d: 0)% against
-  #num(-R("Paper EMA, 100 d").maxdd_10 * 100, d: 0)%, and its monthly skew is #num(R("Clenow core").skew_m) against
-  #num(R("Paper EMA, 100 d").skew_m).
-- *The parameters do not matter much, and cannot be tuned.* Across 30 breakout and stop settings, the net Sharpe ratio
-  ranges from #num(DF.grid.in_min) to #num(DF.grid.in_max) before 2014 and from #num(DF.grid.post_min) to
-  #num(DF.grid.post_max) after. The in-sample ranking does not predict the later one (rank correlation
-  #num(DF.grid.rank_corr)).
-- *A real trend fund.* The two rules together explain #num(DF.benchmark.r2_paper_and_core * 100, d: 0)% of the
-  monthly variance of a public managed-futures fund (#DF.benchmark.name, 2010–2024).
-- *Part I's weak commodities are mostly a data effect.* On the same seven commodities and months, the paper's monthly
-  rule earns a Sharpe ratio of #num(DF.spot_vs_futures.all.spot) on averaged spot prices and
-  #num(DF.spot_vs_futures.all.fut0) on month-end futures. Most of the gap comes from the one-month delay that averaged
-  data force, not from carry.
-
-Part III tests the follow-up paper by the same group, Dao et al. (2016). It argues that trend following is a cheap
-form of tail protection for long investors because its P&L is the difference between long-term and short-term
-realised variance. It then puts that protection to work on the inverse-volatility portfolio of the companion study
-#link("https://github.com/lwang-genomics/inverse-vol-futures-overlay")[inverse-vol-futures-overlay].
-
-- *The mechanics replicate exactly.* The paper's identity holds to machine precision on S&P 500 futures, and the
-  P&L of a linear trend aggregated over ≈ 90 days is a parabola in the trend indicator (R² = #num(C.sp.lin.r2),
-  curvature #num(C.sp.lin.c, d: 3) vs #num(C.sp.lin_theory_c, d: 3) predicted). The sign rule gives the predicted V.
-- *Convexity in a real fund is weaker than in the paper.* A diversified replicator reaches a monthly correlation of
-  #num(C.replicator.corr.at("62").at("180")) with a public managed-futures fund at the paper's τ = 180 days. Measured
-  at the right horizon, the fund's convexity against the S&P 500 rises from R² = #num(C.fund_convexity.naive.r2) to
-  #num(C.fund_convexity.agg.r2), less than the paper's 0.02 → 0.18 on the SG CTA Index.
-- *The risk-parity bound holds on every day* (#num(C.rp_bound.n, d: 0) days, 16 futures), as eq. (24) guarantees.
-- *As an overlay, trend improves the inverse-vol book at equal risk.* At 10% volatility, adding the diversified
-  trend raises the Sharpe ratio from #num(OV("Book alone").sr) to #num(OV("Book + 1 × diversified trend τ=180").sr),
-  cuts the worst drawdown from #pc(-OV("Book alone").maxdd, d: 0) to
-  #pc(-OV("Book + 1 × diversified trend τ=180").maxdd, d: 0) and turns quarterly skew from
-  #num(OV("Book alone").skew_q) to #num(OV("Book + 1 × diversified trend τ=180").skew_q). In 2022, when the book
-  lost #pc(-C.stress.at("2022 rate shock").book, d: 0), the trend overlay made
-  #pc(C.stress.at("2022 rate shock").div_slow, d: 0). It does not, on average, pay off in the book's worst quarters.
-- *Puts protect sooner but cost more.* The CBOE 5% put-protection index lost #pc(C.options.put_cost) a year against
-  the S&P 500. Implied variance exceeded the variance realised afterwards in #pc(C.vrp.share_iv_above, d: 0) of
-  months. Puts helped most in the fast COVID crash, where a 180-day trend helped little.
-
-#text(size: 9pt, fill: luma(90))[Part I: @sec-paper to @sec-us. Part II: @sec-p2 to @sec-spot. Part III: @sec-p3 to @sec-options. Conclusions: @sec-conc.]
+*Part III: trend convexity and tail protection* (@sec-p3 to @sec-options)
+- *The mechanics replicate exactly:* trend P&L is long-term minus short-term variance, a parabola on S&P 500
+  futures (R² = #num(C.sp.lin.r2)), and the risk-parity bound holds on every day.
+- *In a real fund the convexity is weaker* than in the paper: R² #num(C.fund_convexity.naive.r2) →
+  #num(C.fund_convexity.agg.r2) at the right horizon, against 0.02 → 0.18 on the SG CTA Index.
+- *As an overlay on the inverse-vol book,* at equal risk: Sharpe #num(OV("Book alone").sr) →
+  #num(OV("Book + 1 × diversified trend τ=180").sr), drawdown #pc(-OV("Book alone").maxdd, d: 0) →
+  #pc(-OV("Book + 1 × diversified trend τ=180").maxdd, d: 0). Monthly puts protected better in the COVID crash but
+  cost #pc(C.options.put_cost) a year.
 
 = The paper and what is replicated <sec-paper>
 

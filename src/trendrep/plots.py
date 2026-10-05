@@ -2,6 +2,8 @@
 
 from .viz_style import *  # noqa: I001  (must load first: sets the theme)
 
+import functools
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -18,18 +20,81 @@ OVERLAP_ALPHA = 0.7  # lines that cross or coincide stay visible through each ot
 SECTOR_LSTYLES = dict(zip(SECTORS, ["solid", "dashed", "dotted", "dashdot"]))
 
 
-def finish(fig, name: str, size: tuple[float, float] | None = None) -> None:
-    FIG_DIR.mkdir(exist_ok=True)
-    path = FIG_DIR / name
-    if size is None:
-        save_slide_wide(path, fig)
+# Every figure is drawn twice: with the slide theme into figures/ (README) and with the report
+# theme into figures/report/ (PDF, sized to the A4 text width so that text is not shrunk).
+REPORT_WIDTH = 6.5  # inches: the text width of the PDF reports
+_MODE = {"report": False}
+
+
+def is_report() -> bool:
+    return _MODE["report"]
+
+
+def fs_annot() -> float:
+    return DALE_FONT_ANNOT_REPORT if is_report() else DALE_FONT_ANNOT
+
+
+def fs_panel() -> float:
+    return 14 if is_report() else 16  # panel letters (style guide, rule 6)
+
+
+def fs_title() -> float:
+    return 11 if is_report() else 14
+
+
+def fs_small() -> float:
+    return 9 if is_report() else 12
+
+
+def fs_cell() -> float:
+    return 8 if is_report() else 11
+
+
+def dual(fn):
+    """Draw the figure with the slide theme, then again with the report theme."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            for report in (False, True):
+                _MODE["report"] = report
+                (set_theme_report if report else set_theme_slide)()
+                fn(*args, **kwargs)
+        finally:
+            _MODE["report"] = False
+            set_theme_slide()
+
+    return wrapper
+
+
+def finish(fig, name: str, size: tuple[float, float] | None = None,
+           report_size: tuple[float, float] | None = None) -> None:
+    """Save with the slide size (default 10 × 5 in) or, in report mode, at the report text width."""
+    w, h = size or (10.0, 5.0)
+    if is_report():
+        out = FIG_DIR / "report"
+        out.mkdir(parents=True, exist_ok=True)
+        rw, rh = report_size or (REPORT_WIDTH, min(3.4, max(2.9, REPORT_WIDTH * h / w)))
+        save_report_double(out / name, fig, width=rw, height=rh)
+        path = out / name
     else:
-        save_slide_wide(path, fig, width=size[0], height=size[1])
+        FIG_DIR.mkdir(exist_ok=True)
+        path = FIG_DIR / name
+        save_slide_wide(path, fig, width=w, height=h)
     plt.close(fig)
     print(f"Saved {path.relative_to(ROOT)}")
 
 
+def fig_legend(fig, ax, ncol: int, **kw) -> None:
+    """One legend centred above side-by-side panels."""
+    fig.legend(*ax.get_legend_handles_labels(), ncol=ncol, loc="lower center", bbox_to_anchor=(0.5, 0.98),
+               borderaxespad=0.2, **kw)
+
+
 def style_dates(ax, idx: pd.DatetimeIndex, base: int = 5) -> None:
+    years = (idx[-1] - idx[0]).days / 365.25
+    while years / base > (7 if is_report() else 13):  # fewer year labels on the narrower report figures
+        base *= 2
     ax.xaxis.set_major_locator(YearLocator(base=base))
     ax.xaxis.set_major_formatter(DateFormatter("%Y"))
     ax.set_xlim(idx[0], idx[-1])
@@ -38,7 +103,7 @@ def style_dates(ax, idx: pd.DatetimeIndex, base: int = 5) -> None:
 def shade_oos(ax, start: str, end) -> None:
     ax.axvspan(pd.Timestamp(start), end, color=OOS_C, alpha=0.08, linewidth=0)
     ax.text(pd.Timestamp(start), 1.0, " after publication", transform=ax.get_xaxis_transform(), color=OOS_C,
-            fontsize=DALE_FONT_ANNOT, va="top", ha="left")
+            fontsize=fs_annot(), va="top", ha="left")
 
 
 def legend_top(ax, ncol: int) -> None:
@@ -46,9 +111,10 @@ def legend_top(ax, ncol: int) -> None:
 
 
 def panel_label(ax, letter: str) -> None:
-    ax.text(-0.12, 1.12, letter, transform=ax.transAxes, fontsize=16, fontweight="bold", va="top")
+    ax.text(-0.12, 1.12, letter, transform=ax.transAxes, fontsize=fs_panel(), fontweight="bold", va="top")
 
 
+@dual
 def cumulative(trend: pd.Series, long_only: pd.Series, oos_start: str, name: str) -> None:
     fig, ax = plt.subplots()
     ax.plot(long_only.index, long_only.cumsum(), color=DALE_NONSIG, linewidth=DALE_LINE_WIDTH,
@@ -61,6 +127,7 @@ def cumulative(trend: pd.Series, long_only: pd.Series, oos_start: str, name: str
     finish(fig, name)
 
 
+@dual
 def sector_cumulative(series: dict[str, pd.Series], oos_start: str, name: str) -> None:
     fig, ax = plt.subplots()
     for sec, s in series.items():
@@ -74,6 +141,7 @@ def sector_cumulative(series: dict[str, pd.Series], oos_start: str, name: str) -
     finish(fig, name)
 
 
+@dual
 def sharpe_by_horizon(sr_in: dict, sr_out: dict, sr_paper: dict, name: str) -> None:
     fig, ax = plt.subplots()
     ns = list(sr_in)
@@ -91,6 +159,7 @@ def sharpe_by_horizon(sr_in: dict, sr_out: dict, sr_paper: dict, name: str) -> N
     finish(fig, name)
 
 
+@dual
 def sharpe_by_decade(sr: dict[str, tuple[float, float]], name: str) -> None:
     fig, ax = plt.subplots()
     names = list(sr)
@@ -107,6 +176,7 @@ def sharpe_by_decade(sr: dict[str, tuple[float, float]], name: str) -> None:
     finish(fig, name)
 
 
+@dual
 def saturation(ravg: pd.DataFrame, fit: dict, name: str) -> None:
     fig, ax = plt.subplots()
     s = np.linspace(ravg["x"].min(), ravg["x"].max(), 300)
@@ -119,10 +189,11 @@ def saturation(ravg: pd.DataFrame, fit: dict, name: str) -> None:
     ax.axvline(0.0, color="black", linewidth=0.8)
     ax.set_xlabel("Signal s")
     ax.set_ylabel("Next move / σ")
-    ax.legend(loc="upper left", fontsize=12)
+    legend_top(ax, ncol=3)
     finish(fig, name)
 
 
+@dual
 def rolling_10y(roll: pd.Series, oos_start: str, name: str) -> None:
     fig, ax = plt.subplots()
     ax.plot(roll.index, roll, color=TREND_C, linewidth=DALE_LINE_EMPH)
@@ -135,6 +206,7 @@ def rolling_10y(roll: pd.Series, oos_start: str, name: str) -> None:
     finish(fig, name)
 
 
+@dual
 def averaging(mean: dict[str, float], name: str) -> None:
     fig, ax = plt.subplots()
     labels = ["Monthly average\nlag 0", "Monthly average\nlag 1 (as printed)", "Month-end\nlag 0",
@@ -143,13 +215,14 @@ def averaging(mean: dict[str, float], name: str) -> None:
     colors = [OOS_C, TREND_C, DALE_NONSIG, DALE_GREYLIGHT]
     ax.bar(range(4), vals, color=colors, edgecolor="#4D4D4D", linewidth=0.7, width=DALE_BAR_WIDTH)
     for i, v in enumerate(vals):
-        ax.text(i, v + 0.01, f"{v:.2f}", ha="center", va="bottom", fontsize=DALE_FONT_ANNOT)
+        ax.text(i, v + 0.01, f"{v:.2f}", ha="center", va="bottom", fontsize=fs_annot())
     ax.set_xticks(range(4), labels)
     ax.set_ylabel("Mean Sharpe ratio\n(6 FX + US 10y)")
     ax.set_ylim(0, max(vals) * 1.2)
     finish(fig, name)
 
 
+@dual
 def long_us(cum: pd.DataFrame, name: str) -> None:
     fig, ax = plt.subplots()
     tot = cum.sum(axis=1)
@@ -174,6 +247,7 @@ def _rule_color(name: str) -> str:
     return TREND_C if name.startswith("Paper") else CORE_C if name.startswith("Clenow") else DALE_NONSIG
 
 
+@dual
 def daily_equity(series: dict[str, pd.Series], split: str, name: str) -> None:
     fig, ax = plt.subplots()
     for k, s in reversed(list(series.items())):
@@ -188,6 +262,7 @@ def daily_equity(series: dict[str, pd.Series], split: str, name: str) -> None:
     finish(fig, name)
 
 
+@dual
 def rule_ladder(sr: dict[str, tuple[float, float]], name: str) -> None:
     fig, ax = plt.subplots()
     names = list(sr)
@@ -208,6 +283,7 @@ def rule_ladder(sr: dict[str, tuple[float, float]], name: str) -> None:
     finish(fig, name)
 
 
+@dual
 def robustness(grid: dict[str, np.ndarray], breakouts: list[int], stops: list[float], name: str,
                default: tuple[int, float] | None = None) -> None:
     fig, axes = plt.subplots(1, 2, sharey=True)
@@ -221,7 +297,7 @@ def robustness(grid: dict[str, np.ndarray], breakouts: list[int], stops: list[fl
             for j in range(g.shape[1]):
                 r, gr, b, _ = cmap((g[i, j] - vmin) / (vmax - vmin))
                 light = 0.299 * r + 0.587 * gr + 0.114 * b > 0.5
-                ax.text(j, i, f"{g[i, j]:.2f}".replace("-", "−"), ha="center", va="center", fontsize=11,
+                ax.text(j, i, f"{g[i, j]:.2f}".replace("-", "−"), ha="center", va="center", fontsize=fs_cell(),
                         color="black" if light else "white")
         if default is not None:
             i, j = breakouts.index(default[0]), stops.index(default[1])
@@ -229,7 +305,7 @@ def robustness(grid: dict[str, np.ndarray], breakouts: list[int], stops: list[fl
         ax.set_xticks(range(len(stops)), [f"{s:g}" for s in stops])
         ax.set_yticks(range(len(breakouts)), [str(b) for b in breakouts])
         ax.set_xlabel("Trailing stop (ATRs)")
-        ax.set_title(title, fontsize=14)
+        ax.set_title(title, fontsize=fs_title())
         ax.spines[["left", "bottom"]].set_visible(False)
         ax.tick_params(length=0)
         panel_label(ax, letter)
@@ -237,12 +313,10 @@ def robustness(grid: dict[str, np.ndarray], breakouts: list[int], stops: list[fl
     cb = fig.colorbar(im, ax=axes, fraction=0.03, pad=0.02)
     cb.set_label("Sharpe ratio, net")
     cb.outline.set_visible(False)
-    FIG_DIR.mkdir(exist_ok=True)
-    save_slide_wide(FIG_DIR / name, fig, width=11.0, height=4.6)
-    plt.close(fig)
-    print(f"Saved {(FIG_DIR / name).relative_to(ROOT)}")
+    finish(fig, name, size=(11.0, 4.6))
 
 
+@dual
 def yearly(y: pd.DataFrame, split: str, name: str) -> None:
     fig, ax = plt.subplots()
     x = np.arange(len(y))
@@ -260,6 +334,7 @@ def yearly(y: pd.DataFrame, split: str, name: str) -> None:
     finish(fig, name)
 
 
+@dual
 def benchmark(fund: pd.Series, rules: dict[str, pd.Series], fund_name: str, name: str) -> None:
     fig, ax = plt.subplots()
     ax.plot(fund.index, fund.cumsum() * 100, color=FUND_C, linewidth=DALE_LINE_EMPH, label=fund_name)
@@ -268,11 +343,12 @@ def benchmark(fund: pd.Series, rules: dict[str, pd.Series], fund_name: str, name
                 label=k)
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_ylabel("Cumulative excess return\n(%, rules at the fund's vol)")
-    legend_top(ax, ncol=3)
+    legend_top(ax, ncol=2 if is_report() else 3)
     style_dates(ax, fund.index, base=2)
     finish(fig, name)
 
 
+@dual
 def daily_sectors(sr: dict[str, dict[str, tuple[float, float]]], core: str, paper: str, name: str) -> None:
     fig, ax = plt.subplots()
     secs = list(sr)
@@ -287,7 +363,7 @@ def daily_sectors(sr: dict[str, dict[str, tuple[float, float]]], core: str, pape
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_xticks(x, secs)
     ax.set_ylabel("Sharpe ratio, net")
-    ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=12)
+    ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=fs_small())
     finish(fig, name)
 
 
@@ -297,12 +373,10 @@ THEORY_C = OOS_C
 
 
 def _wide(fig, name: str, width: float = 12.0, height: float = 4.8) -> None:
-    FIG_DIR.mkdir(exist_ok=True)
-    save_slide_wide(FIG_DIR / name, fig, width=width, height=height)
-    plt.close(fig)
-    print(f"Saved {(FIG_DIR / name).relative_to(ROOT)}")
+    finish(fig, name, size=(width, height))
 
 
+@dual
 def smile(b_lin: pd.DataFrame, b_sgn: pd.DataFrame, raw_lin, raw_sgn, th_lin, th_sgn, name: str) -> None:
     fig, axes = plt.subplots(1, 2)
     t = np.linspace(-3.5, 3.5, 300)
@@ -315,13 +389,14 @@ def smile(b_lin: pd.DataFrame, b_sgn: pd.DataFrame, raw_lin, raw_sgn, th_lin, th
         ax.axhline(0.0, color="black", linewidth=0.8)
         ax.set_xlim(-3.5, 3.5)
         ax.set_xlabel("Trend indicator T")
-        ax.set_title(title, fontsize=14)
+        ax.set_title(title, fontsize=fs_title())
         panel_label(ax, letter)
     axes[0].set_ylabel("Aggregated P&L Ḡ (%)")
-    axes[1].legend(loc="upper center", fontsize=12, markerscale=2)
+    fig_legend(fig, axes[1], ncol=3, markerscale=2)
     _wide(fig, name)
 
 
+@dual
 def corr_by_tau(corr: dict[str, dict[int, float]], name: str) -> None:
     fig, ax = plt.subplots()
     series = (("16", TREND_C, "16 liquid futures (paper's list)"), ("62", CORE_C, "62 futures (Part II)"))
@@ -329,7 +404,7 @@ def corr_by_tau(corr: dict[str, dict[int, float]], name: str) -> None:
         taus = list(corr[key])
         ax.plot(taus, [corr[key][k] for k in taus], "o-", color=color, linewidth=DALE_LINE_WIDTH, label=label)
     ax.axvline(180, color=DALE_NONSIG, linestyle="dashed", linewidth=DALE_LINE_WIDTH)
-    ax.text(185, ax.get_ylim()[0] + 0.02, "paper: τ = 180", color="#4D4D4D", fontsize=12, va="bottom")
+    ax.text(185, ax.get_ylim()[0] + 0.02, "paper: τ = 180", color="#4D4D4D", fontsize=fs_small(), va="bottom")
     ax.set_xscale("log")
     ax.set_xticks([20, 40, 60, 90, 120, 180, 250, 350], ["20", "40", "60", "90", "120", "180", "250", "350"])
     ax.minorticks_off()
@@ -339,6 +414,7 @@ def corr_by_tau(corr: dict[str, dict[int, float]], name: str) -> None:
     finish(fig, name)
 
 
+@dual
 def fund_convexity(mm: pd.DataFrame, naive: dict, df: pd.DataFrame, agg: dict, name: str) -> None:
     fig, axes = plt.subplots(1, 2)
     ax = axes[0]
@@ -348,7 +424,7 @@ def fund_convexity(mm: pd.DataFrame, naive: dict, df: pd.DataFrame, agg: dict, n
             linewidth=DALE_LINE_EMPH, linestyle="dashed")
     ax.set_xlabel("S&P 500 monthly return (%)")
     ax.set_ylabel("Fund monthly return (%)")
-    ax.set_title(f"Naive monthly view: R² = {naive['r2']:.2f}", fontsize=14)
+    ax.set_title(f"Naive monthly view: R² = {naive['r2']:.2f}", fontsize=fs_title())
     ax = axes[1]
     ax.scatter(df["T"].iloc[::3], df["Gbar"].iloc[::3] * 100, s=4, color=DALE_NONSIG, rasterized=True)
     t = np.linspace(df["T"].min(), df["T"].max(), 200)
@@ -356,13 +432,15 @@ def fund_convexity(mm: pd.DataFrame, naive: dict, df: pd.DataFrame, agg: dict, n
             linestyle="dashed")
     ax.set_xlabel("S&P 500 trend indicator T (τ = 180 d)")
     ax.set_ylabel("Fund P&L aggregated over τ' (%)")
-    ax.set_title(f"Aggregated view: R² = {agg['r2']:.2f}", fontsize=14)
+    ax.set_title(f"Aggregated view: R² = {agg['r2']:.2f}", fontsize=fs_title())
     for a_, letter in zip(axes, "ab"):
         a_.axhline(0.0, color="black", linewidth=0.8)
         panel_label(a_, letter)
+    fig.subplots_adjust(wspace=0.4 if is_report() else 0.25)
     _wide(fig, name)
 
 
+@dual
 def rp_bound(t: np.ndarray, g: np.ndarray, ups: float, name: str) -> None:
     fig, ax = plt.subplots()
     ax.scatter(t[::3], g[::3] * 100, s=4, color=TREND_C, alpha=0.5, rasterized=True, label="Diversified trend, daily")
@@ -376,6 +454,7 @@ def rp_bound(t: np.ndarray, g: np.ndarray, ups: float, name: str) -> None:
     finish(fig, name)
 
 
+@dual
 def overlay_quintiles(cond: dict, labels: dict, name: str) -> None:
     fig, axes = plt.subplots(1, 2, sharey=True)
     w = 0.38
@@ -385,19 +464,21 @@ def overlay_quintiles(cond: dict, labels: dict, name: str) -> None:
             ax.bar(x + off, np.array(d[k]) * 100, width=w, color=color, label=labels[k])
         ax.axhline(0.0, color="black", linewidth=0.8)
         ax.set_xticks(x, ["worst", "2", "3", "4", "best"])
-        ax.set_xlabel(f"Quintile of the book's {h} return")
-        ax.set_title(f"{h} horizon", fontsize=14)
+        ax.set_xlabel("Quintile of the book's return")
+        ax.set_title(f"{h} horizon", fontsize=fs_title())
         panel_label(ax, letter)
     axes[0].set_ylabel("Mean overlay return (%)")
-    axes[1].legend(loc="upper center", fontsize=12)
+    fig_legend(fig, axes[0], ncol=2)
     _wide(fig, name)
 
 
+@dual
 def overlay_drawdowns(book: pd.Series, combo: pd.Series, label: str, name: str) -> None:
     fig, ax = plt.subplots()
     def drawdown(x: pd.Series) -> pd.Series:
+        """Daily drawdown, shown weekly at its deepest point so that no trough is lost."""
         cum = np.log1p(x).cumsum()
-        return (np.exp(cum - cum.cummax()) - 1) * 100
+        return ((np.exp(cum - cum.cummax()) - 1) * 100).resample("W-FRI").min()
 
     for x, color, lw, lab in ((book, FUND_C, DALE_LINE_WIDTH, "Inverse-vol book (10% vol)"),
                               (combo, TREND_C, DALE_LINE_EMPH, f"Book + {label} (10% vol)")):
@@ -409,6 +490,7 @@ def overlay_drawdowns(book: pd.Series, combo: pd.Series, label: str, name: str) 
     finish(fig, name)
 
 
+@dual
 def protection(strat: dict[str, pd.Series], name: str) -> None:
     fig, ax = plt.subplots()
     colors = [FUND_C, THEORY_C, CORE_C, TREND_C]
@@ -417,6 +499,6 @@ def protection(strat: dict[str, pd.Series], name: str) -> None:
                 DALE_LINE_EMPH, alpha=OVERLAP_ALPHA, label=k)
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_ylabel("Cumulative excess log return (%)")
-    ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=12)
+    ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=fs_small())
     style_dates(ax, next(iter(strat.values())).index)
     finish(fig, name)

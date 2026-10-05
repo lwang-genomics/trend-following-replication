@@ -156,6 +156,9 @@ uv run trendrep-report    # compile the PDF report (Typst)
 uv run pytest             # 30 tests, synthetic data only
 ```
 
+Every figure is drawn twice from the same code: slide versions in `figures/` (shown in this README) and report
+versions sized for the PDF in `figures/report/`.
+
 The tests check the EMA and P&L against hand calculations and verify that there is **no look-ahead**. They also
 check that random walks give t-stats centred on zero with unit spread, that **monthly averaging fakes a trend at
 lag 0 but not at lag 1**, that trending series are profitable, that stale prices are not traded, and that the
