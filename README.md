@@ -30,7 +30,7 @@ convexity worth to a long-only investor, and how does it compare with buying put
 | | Result |
 |---|---|
 | **Replicates** | 1960–2013, 27 markets, n = 5 months: Sharpe **0.74** (paper 0.78), t = **5.4** (5.7), drift-removed t\* = **4.5** (5.0). Correlation with the long-only drift is 0.18 (paper 0.15). |
-| **Sectors** | Currencies (0.53 vs 0.57) and bonds (0.45 vs 0.49) match. Commodities are much weaker on spot prices (0.17 vs 0.80), because spot data miss the futures' carry, as the paper notes. |
+| **Sectors** | Currencies (0.53 vs 0.57) and bonds (0.45 vs 0.49) match. Commodities are much weaker on spot prices (0.17 vs 0.80); Part II shows this is mostly a data effect rather than missing carry. |
 | **Saturation** | A tanh fit of the next move on the signal saturates at s\* = 1.01 (paper 0.89) and beats the linear fit (F = 11). The cubic term is negative, as reported. |
 | **After publication** | 2014–2026: Sharpe **0.27** (t = 1.0). That's weaker, but a bootstrap of the in-sample history gives a 9% chance of a period this weak, so the effect is not statistically rejected. |
 | **150 years of US data** | Trend on US equities (from 1873) and bonds (from 1953): Sharpe 0.45, t = 5.5, positive in every 50-year block. |
@@ -186,7 +186,7 @@ src/trendrep/
   plots.py     figures
 ```
 
-## Limitations and next steps
+## Limitations
 
 - **Limitations, Part I:** spot and index proxies instead of futures, monthly averages for most series, no costs, and
   27 markets rather than a full CTA universe.
