@@ -175,3 +175,30 @@ BENCHMARK_NAME = "AQR Managed Futures Strategy (AQMIX)"
 # Phase-I spot commodity -> futures with the same underlying (Part I's spot-vs-futures question)
 SPOT_TO_FUTURES = {"CRUDE": "CRUDE_W", "NATGAS": "GAS_US", "CORN": "CORN", "WHEAT": "REDWHEAT",
                    "SUGAR": "SUGAR11", "CATTLE": "LIVECOW", "COPPER": "COPPER"}
+
+
+# ====================================================================== Part III: trend convexity and tail protection
+#
+# Dao, Nguyen, Deremble, Lempérière, Bouchaud & Potters (2016), "Tail protection for long investors:
+# trend convexity at work", arXiv:1607.02410.
+
+CONVEX_TAU = 180  # the paper's trend time scale (days), fitted to the SG CTA Index
+TAU_GRID = [20, 40, 60, 90, 120, 180, 250, 350]
+SP_SAMPLE = ("1983-01-01", "2015-10-31")  # the paper's S&P 500 futures sample (Figs. 4-5)
+# The paper's Table 6 (most liquid futures), as available here from 2002: Eurodollar and Short
+# Sterling are not in the data set, and the DAX stands in for the EuroStoxx 50 (which starts in
+# 2014 here), Nikkei and Bund start too late (2011, 2006) and are left out.
+PAPER_CTA = ["CRUDE_W", "GOLD", "COPPER", "SOYBEAN", "SP500", "DAX", "FTSE100", "EUR", "JPY", "GBP", "AUD", "CHF",
+             "EURIBOR", "US10", "GILT", "JGB"]
+PAPER_CTA_START = "2002-01-01"
+BOOK_ASSETS = ["SP500", "US10", "GOLD"]  # the "traditional" basket of inverse-vol-futures-overlay (ES, ZN, GC)
+OVERLAY_TAUS = {"fast": 40, "slow": 180}
+OVERLAY_SIZES = [0.0, 0.5, 1.0]  # overlay volatility as a multiple of the book's 10%
+STRESS = {
+    "2000–02 dot-com bear": ("2000-03-24", "2002-10-09"),
+    "2007–09 financial crisis": ("2007-10-09", "2009-03-09"),
+    "2018 Q4 sell-off": ("2018-09-20", "2018-12-24"),
+    "2020 COVID crash": ("2020-02-19", "2020-03-23"),
+    "2022 rate shock": ("2022-01-03", "2022-10-12"),
+}
+CBOE_PPUT_URL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/PPUT_History.csv"

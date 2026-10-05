@@ -1,7 +1,7 @@
 [project]
 name = "trend-following-replication"
 version = "0.1.0"
-description = "Replication and out-of-sample test of 'Two centuries of trend following' (Lempérière et al., 2014) on free data, and Clenow's practitioner rules on daily futures."
+description = "Replication of 'Two centuries of trend following' on free data, Clenow's practitioner rules on daily futures, and trend convexity as tail protection (Dao et al., 2016)."
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Liangxi Wang" }]
@@ -21,6 +21,7 @@ dependencies = [
 [project.scripts]
 trendrep = "trendrep.study:main"
 trendrep-daily = "trendrep.daily:main"
+trendrep-convexity = "trendrep.convexity_study:main"
 trendrep-report = "trendrep.report:main"
 
 [dependency-groups]

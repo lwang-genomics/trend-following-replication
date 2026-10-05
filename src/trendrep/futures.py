@@ -13,7 +13,9 @@ import pandas as pd
 
 from .config import (
     BENCHMARK,
+    CBOE_PPUT_URL,
     COST_RECENT,
+    FRED_URL,
     FUTURES,
     FUTURES_COMMIT,
     FUTURES_DIR,
@@ -104,6 +106,63 @@ def benchmark_monthly() -> pd.Series:
     ret = px.resample("MS").last().pct_change().dropna()
     tbill = fred("TB3MS").reindex(ret.index) / 100 / 12
     return (ret - tbill).dropna().rename(BENCHMARK)
+
+
+def percent_returns(market: str) -> pd.Series:
+    """Daily simple returns of the contract held: back-adjusted price change over the previous actual price.
+
+    The actual price of the contract held (PRICE in pysystemtrade's multiple prices) gives the
+    denominator; on a roll day the change is that of the new contract, so roll yield is included.
+    """
+    raw = _futures_file(f"multiple_prices_csv/{market}.csv")
+    x = pd.read_csv(io.BytesIO(raw), parse_dates=["DATETIME"]).set_index("DATETIME")["PRICE"].astype(float)
+    actual = x.groupby(x.index.normalize()).last()
+    actual = actual[actual.index.dayofweek < 5]
+    adj = daily_close(market)
+    both = pd.concat([adj, actual], axis=1, keys=["adj", "px"]).dropna()
+    return (both["adj"].diff() / both["px"].shift(1)).dropna().rename(market)
+
+
+def _yahoo_daily(ticker: str, name: str) -> pd.Series:
+    path = FUTURES_DIR / f"yahoo_{name}.csv"
+    if not path.exists():
+        import yfinance as yf
+
+        FUTURES_DIR.mkdir(parents=True, exist_ok=True)
+        px = yf.download(ticker, start="1985-01-01", end="2024-04-01", auto_adjust=True, progress=False)
+        px["Close"].squeeze().rename("close").to_csv(path)
+    return pd.read_csv(path, index_col=0, parse_dates=True).iloc[:, 0].dropna()
+
+
+def tbill_daily(index: pd.DatetimeIndex) -> pd.Series:
+    """3-month T-bill rate (FRED TB3MS) as a daily simple return on `index`."""
+    tb = fred("TB3MS") / 100 / 252
+    return tb.reindex(index.union(tb.index)).ffill().reindex(index)
+
+
+def benchmark_daily() -> pd.Series:
+    """Daily excess return of the managed-futures benchmark fund (adjusted close, minus T-bills)."""
+    ret = _yahoo_daily(BENCHMARK, BENCHMARK).pct_change().dropna()
+    return (ret - tbill_daily(ret.index)).dropna().rename(BENCHMARK)
+
+
+def sp500_total_return() -> pd.Series:
+    """S&P 500 total-return index level (Yahoo ^SP500TR, from 1988)."""
+    return _yahoo_daily("^SP500TR", "SP500TR").rename("SP500TR")
+
+
+def protective_put() -> pd.Series:
+    """CBOE S&P 500 5% Put Protection Index (PPUT): S&P 500 plus a monthly 5% out-of-the-money put."""
+    raw = _fetch(CBOE_PPUT_URL, FUTURES_DIR / "cboe_PPUT.csv")
+    x = pd.read_csv(io.BytesIO(raw))
+    return pd.Series(x["PPUT"].to_numpy(float), index=pd.to_datetime(x["DATE"], format="%m/%d/%Y"), name="PPUT")
+
+
+def vix() -> pd.Series:
+    """VIX (FRED VIXCLS), the 30-day implied volatility of the S&P 500, in % p.a."""
+    raw = _fetch(FRED_URL.format("VIXCLS"), FUTURES_DIR / "fred_VIXCLS_daily.csv")
+    df = pd.read_csv(io.BytesIO(raw), na_values=".")
+    return pd.Series(df.iloc[:, 1].to_numpy(float), index=pd.to_datetime(df.iloc[:, 0]), name="VIX").dropna()
 
 
 def true_range_ratio() -> dict[str, float]:

@@ -287,3 +287,131 @@ def daily_sectors(sr: dict[str, dict[str, tuple[float, float]]], core: str, pape
     ax.set_ylabel("Sharpe ratio, net")
     ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=12)
     finish(fig, name)
+
+
+# ====================================================================== Part III: trend convexity
+
+THEORY_C = OOS_C
+
+
+def _wide(fig, name: str, width: float = 12.0, height: float = 4.8) -> None:
+    FIG_DIR.mkdir(exist_ok=True)
+    save_slide_wide(FIG_DIR / name, fig, width=width, height=height)
+    plt.close(fig)
+    print(f"Saved {(FIG_DIR / name).relative_to(ROOT)}")
+
+
+def smile(b_lin: pd.DataFrame, b_sgn: pd.DataFrame, raw_lin, raw_sgn, th_lin, th_sgn, name: str) -> None:
+    fig, axes = plt.subplots(1, 2)
+    t = np.linspace(-3.5, 3.5, 300)
+    for ax, b, raw, th, title, letter in zip(axes, (b_lin, b_sgn), (raw_lin, raw_sgn), (th_lin, th_sgn),
+                                            ("Linear trend: parabola", "Sign of the trend: V"), "ab"):
+        x, y = raw
+        ax.scatter(x[::7], y[::7] * 100, s=4, color=DALE_GREYLIGHT, rasterized=True, label="Daily values")
+        ax.plot(b["x"], b["y"] * 100, "o", color=TREND_C, markersize=6, label="Binned mean")
+        ax.plot(t, th(t) * 100, color=THEORY_C, linewidth=DALE_LINE_EMPH, linestyle="dashed", label="Theory")
+        ax.axhline(0.0, color="black", linewidth=0.8)
+        ax.set_xlim(-3.5, 3.5)
+        ax.set_xlabel("Trend indicator T")
+        ax.set_title(title, fontsize=14)
+        panel_label(ax, letter)
+    axes[0].set_ylabel("Aggregated P&L Ḡ (%)")
+    axes[1].legend(loc="upper center", fontsize=12, markerscale=2)
+    _wide(fig, name)
+
+
+def corr_by_tau(corr: dict[str, dict[int, float]], name: str) -> None:
+    fig, ax = plt.subplots()
+    series = (("16", TREND_C, "16 liquid futures (paper's list)"), ("62", CORE_C, "62 futures (Part II)"))
+    for key, color, label in series:
+        taus = list(corr[key])
+        ax.plot(taus, [corr[key][k] for k in taus], "o-", color=color, linewidth=DALE_LINE_WIDTH, label=label)
+    ax.axvline(180, color=DALE_NONSIG, linestyle="dashed", linewidth=DALE_LINE_WIDTH)
+    ax.text(185, ax.get_ylim()[0] + 0.02, "paper: τ = 180", color="#4D4D4D", fontsize=12, va="bottom")
+    ax.set_xscale("log")
+    ax.set_xticks([20, 40, 60, 90, 120, 180, 250, 350], ["20", "40", "60", "90", "120", "180", "250", "350"])
+    ax.minorticks_off()
+    ax.set_xlabel("Trend time scale τ (days)")
+    ax.set_ylabel("Monthly correlation with\nthe managed-futures fund")
+    legend_top(ax, ncol=2)
+    finish(fig, name)
+
+
+def fund_convexity(mm: pd.DataFrame, naive: dict, df: pd.DataFrame, agg: dict, name: str) -> None:
+    fig, axes = plt.subplots(1, 2)
+    ax = axes[0]
+    ax.scatter(mm["s"] * 100, mm["f"] * 100, s=18, color=DALE_NONSIG)
+    s = np.linspace(mm["s"].min(), mm["s"].max(), 200)
+    ax.plot(s * 100, (naive["a"] + naive["b"] * s + naive["c"] * s**2) * 100, color=THEORY_C,
+            linewidth=DALE_LINE_EMPH, linestyle="dashed")
+    ax.set_xlabel("S&P 500 monthly return (%)")
+    ax.set_ylabel("Fund monthly return (%)")
+    ax.set_title(f"Naive monthly view: R² = {naive['r2']:.2f}", fontsize=14)
+    ax = axes[1]
+    ax.scatter(df["T"].iloc[::3], df["Gbar"].iloc[::3] * 100, s=4, color=DALE_NONSIG, rasterized=True)
+    t = np.linspace(df["T"].min(), df["T"].max(), 200)
+    ax.plot(t, (agg["a"] + agg["b"] * t + agg["c"] * t**2) * 100, color=THEORY_C, linewidth=DALE_LINE_EMPH,
+            linestyle="dashed")
+    ax.set_xlabel("S&P 500 trend indicator T (τ = 180 d)")
+    ax.set_ylabel("Fund P&L aggregated over τ' (%)")
+    ax.set_title(f"Aggregated view: R² = {agg['r2']:.2f}", fontsize=14)
+    for a_, letter in zip(axes, "ab"):
+        a_.axhline(0.0, color="black", linewidth=0.8)
+        panel_label(a_, letter)
+    _wide(fig, name)
+
+
+def rp_bound(t: np.ndarray, g: np.ndarray, ups: float, name: str) -> None:
+    fig, ax = plt.subplots()
+    ax.scatter(t[::3], g[::3] * 100, s=4, color=TREND_C, alpha=0.5, rasterized=True, label="Diversified trend, daily")
+    x = np.linspace(t.min(), t.max(), 200)
+    ax.plot(x, ups * (x**2 - 1) * 100, color=THEORY_C, linewidth=DALE_LINE_EMPH, linestyle="dashed",
+            label="Lower bound, eq. (24)")
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.set_xlabel("Trend of the risk-parity portfolio, $T_{RP}$")
+    ax.set_ylabel("Aggregated trend P&L Ḡ (%)")
+    legend_top(ax, ncol=2)
+    finish(fig, name)
+
+
+def overlay_quintiles(cond: dict, labels: dict, name: str) -> None:
+    fig, axes = plt.subplots(1, 2, sharey=True)
+    w = 0.38
+    for ax, (h, d), letter in zip(axes, cond.items(), "ab"):
+        x = np.arange(5)
+        for off, (k, color) in zip((-w / 2, w / 2), (("div_slow", TREND_C), ("div_fast", CORE_C))):
+            ax.bar(x + off, np.array(d[k]) * 100, width=w, color=color, label=labels[k])
+        ax.axhline(0.0, color="black", linewidth=0.8)
+        ax.set_xticks(x, ["worst", "2", "3", "4", "best"])
+        ax.set_xlabel(f"Quintile of the book's {h} return")
+        ax.set_title(f"{h} horizon", fontsize=14)
+        panel_label(ax, letter)
+    axes[0].set_ylabel("Mean overlay return (%)")
+    axes[1].legend(loc="upper center", fontsize=12)
+    _wide(fig, name)
+
+
+def overlay_drawdowns(book: pd.Series, combo: pd.Series, label: str, name: str) -> None:
+    fig, ax = plt.subplots()
+    for s, color, lw, lab in ((book, FUND_C, DALE_LINE_WIDTH, "Inverse-vol book (10% vol)"),
+                              (combo, TREND_C, DALE_LINE_EMPH, f"Book + {label} (10% vol)")):
+        cum = np.log1p(s).cumsum()
+        dd = (np.exp(cum - cum.cummax()) - 1) * 100
+        ax.plot(dd.index, dd, color=color, linewidth=lw, label=lab)
+    ax.set_ylabel("Drawdown (%)")
+    legend_top(ax, ncol=2)
+    style_dates(ax, book.index)
+    finish(fig, name)
+
+
+def protection(strat: dict[str, pd.Series], name: str) -> None:
+    fig, ax = plt.subplots()
+    colors = [FUND_C, THEORY_C, CORE_C, TREND_C]
+    for (k, s), c in zip(strat.items(), colors):
+        ax.plot(s.index, np.log1p(s).cumsum() * 100, color=c, linewidth=DALE_LINE_WIDTH if c == FUND_C else
+                DALE_LINE_EMPH, label=k)
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.set_ylabel("Cumulative excess log return (%)")
+    ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=12)
+    style_dates(ax, next(iter(strat.values())).index)
+    finish(fig, name)

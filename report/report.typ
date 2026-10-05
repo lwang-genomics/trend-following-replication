@@ -9,6 +9,10 @@
 #let DF = dres.facts
 #let R(name) = DF.rules_stats.at(name)
 #let SP(key) = DF.spanning.at(key)
+#let cres = json("../results/results_convexity.json")
+#let CT = cres.tables
+#let C = cres.facts
+#let OV(name) = C.overlay.stats.at(name)
 #let num(x, d: 2) = {
   if x == none { return "–" }
   let neg = x < 0
@@ -17,7 +21,9 @@
   (if neg { "−" } else { "" }) + parts.at(0) + (if d > 0 { "." + dec + "0" * (d - dec.len()) } else { "" })
 }
 
-#set document(title: "Trend Following: Replication, Out-of-Sample Test and Practitioner Rules", author: "Liangxi Wang")
+#let pc(x, d: 1) = num(x * 100, d: d) + "%"
+
+#set document(title: "Trend Following: Replication, Practitioner Rules and Tail Protection", author: "Liangxi Wang")
 #set page(paper: "a4", margin: (x: 2.2cm, y: 2.2cm), numbering: "1")
 #set text(font: ("Arial", "Helvetica Neue", "Helvetica"), size: 10pt)
 #set par(justify: true, leading: 0.62em)
@@ -46,11 +52,13 @@
 )
 
 #align(center)[
-  #text(size: 19pt)[Trend Following: Replication, Out-of-Sample Test \ and Practitioner Rules] \
+  #text(size: 19pt)[Trend Following: Replication, Practitioner Rules \ and Tail Protection] \
   #v(0.3em)
   #text(size: 12pt)[Part I: Lempérière, Deremble, Seager, Potters & Bouchaud (2014), "Two centuries of trend
     following", reproduced on free data and tested after publication. \
-    Part II: the core model of A. Clenow's _Following the Trend_ (2013) against the paper's signal, on daily futures] \
+    Part II: the core model of A. Clenow's _Following the Trend_ (2013) against the paper's signal, on daily futures. \
+    Part III: Dao et al. (2016), "Tail protection for long investors: trend convexity at work", and trend as an
+    overlay on an inverse-volatility portfolio] \
   #v(0.3em)
   #text(size: 10pt, fill: luma(110))[Liangxi Wang · monthly data #F.sample · daily futures 1990-01 → 2024-03 · October 2026 \
     #link("https://github.com/lwang-genomics/trend-following-replication")[github.com/lwang-genomics/trend-following-replication]]
@@ -115,7 +123,31 @@ signal on the same data.
   #num(DF.spot_vs_futures.all.fut0) on month-end futures. Most of the gap comes from the one-month delay that averaged
   data force, not from carry.
 
-#text(size: 9pt, fill: luma(90))[Part I: @sec-paper to @sec-us. Part II: @sec-p2 to @sec-spot. Conclusions: @sec-conc.]
+Part III tests the follow-up paper by the same group, Dao et al. (2016). It argues that trend following is a cheap
+form of tail protection for long investors because its P&L is the difference between long-term and short-term
+realised variance. It then puts that protection to work on the inverse-volatility portfolio of the companion study
+#link("https://github.com/lwang-genomics/inverse-vol-futures-overlay")[inverse-vol-futures-overlay].
+
+- *The mechanics replicate exactly.* The paper's identity holds to machine precision on S&P 500 futures, and the
+  P&L of a linear trend aggregated over ≈ 90 days is a parabola in the trend indicator (R² = #num(C.sp.lin.r2),
+  curvature #num(C.sp.lin.c, d: 3) vs #num(C.sp.lin_theory_c, d: 3) predicted). The sign rule gives the predicted V.
+- *Convexity in a real fund is weaker than in the paper.* A diversified replicator reaches a monthly correlation of
+  #num(C.replicator.corr.at("62").at("180")) with a public managed-futures fund at the paper's τ = 180 days. Measured
+  at the right horizon, the fund's convexity against the S&P 500 rises from R² = #num(C.fund_convexity.naive.r2) to
+  #num(C.fund_convexity.agg.r2), less than the paper's 0.02 → 0.18 on the SG CTA Index.
+- *The risk-parity bound holds on every day* (#num(C.rp_bound.n, d: 0) days, 16 futures), as eq. (24) guarantees.
+- *As an overlay, trend improves the inverse-vol book at equal risk.* At 10% volatility, adding the diversified
+  trend raises the Sharpe ratio from #num(OV("Book alone").sr) to #num(OV("Book + 1 × diversified trend τ=180").sr),
+  cuts the worst drawdown from #pc(-OV("Book alone").maxdd, d: 0) to
+  #pc(-OV("Book + 1 × diversified trend τ=180").maxdd, d: 0) and turns quarterly skew from
+  #num(OV("Book alone").skew_q) to #num(OV("Book + 1 × diversified trend τ=180").skew_q). In 2022, when the book
+  lost #pc(-C.stress.at("2022 rate shock").book, d: 0), the trend overlay made
+  #pc(C.stress.at("2022 rate shock").div_slow, d: 0). It does not, on average, pay off in the book's worst quarters.
+- *Puts protect sooner but cost more.* The CBOE 5% put-protection index lost #pc(C.options.put_cost) a year against
+  the S&P 500. Implied variance exceeded the variance realised afterwards in #pc(C.vrp.share_iv_above, d: 0) of
+  months. Puts helped most in the fast COVID crash, where a 180-day trend helped little.
+
+#text(size: 9pt, fill: luma(90))[Part I: @sec-paper to @sec-us. Part II: @sec-p2 to @sec-spot. Part III: @sec-p3 to @sec-options. Conclusions: @sec-conc.]
 
 = The paper and what is replicated <sec-paper>
 
@@ -432,6 +464,141 @@ shortfall of Part I is mostly due to the delay that monthly averages force on th
 For currencies and bonds the delay costs nothing (Part I), so commodity trends seem to be faster. With 18–24 years
 per market these Sharpe ratios have standard errors of about 0.2, so the split is approximate.
 
+= Part III: trend convexity and tail protection <sec-p3>
+
+Dao, Nguyen, Deremble, Lempérière, Bouchaud and Potters (2016) explain why trend following tends to do well when
+markets move a lot. For a linear trend on one asset, they show that the P&L aggregated over the trend's horizon is,
+exactly, a long-term variance minus a short-term variance. A trend follower is therefore "long" large moves over its
+own time scale, like an option holder, and pays for it with short-term realised variance rather than an option
+premium. Part III checks the mathematics, measures the convexity in a real trend fund, and asks what the property is
+worth to a long-only investor. The investor in question holds the inverse-volatility portfolio of the companion
+study.
+
+== Trend P&L is long-term minus short-term variance
+
+Following the paper, each market's daily price change $D_t$ is normalised by a 10-day risk estimate,
+$R_t = D_t \/ sigma_(t-1)$ with $sigma_t = gamma sqrt(L_10 [D_t^2])$, where $L_tau$ is an EMA with weight
+$2\/(tau+1)$. A linear trend holds $Pi_t = lambda tau L_tau [R_t] \/ sigma_t$, so its daily P&L is
+$G_t = lambda tau L_tau [R]_(t-1) R_t$. The paper's eq. (13) states
+
+$ L_(tau') [G_t] = (lambda tau) / (tau - 1) (tau L_tau [R_t]^2 - L_(tau') [R_t^2]), quad tau' = tau / 2 + 1 / (2 tau). $
+
+With the trend indicator $T = sqrt(tau) L_tau [R]$ and the P&L aggregated over ≈ τ' days,
+$overline(G) = tau' L_(tau') [G]$, this reads $overline(G) = Upsilon (T^2 - L_(tau') [R^2])$: a parabola in the
+long-term move, minus the short-term variance. On S&P 500 futures the two sides agree to
+about 10#super[−17], the precision of the computer, and a test checks the identity on arbitrary fat-tailed series.
+
+One detail differs from the paper. Its calibration factor γ = 1.05 makes $R$ unit-variance; here γ = 1.16 is needed
+on S&P 500 futures (and 1.10 even on Gaussian returns). With the paper's value, $⟨R^2⟩ = #num(C.sp.var_R)$, which
+shifts the parabola down but leaves its curvature unchanged. The theory curves below use the measured $⟨R^2⟩$.
+
+== The smile on S&P 500 futures
+
+#fig("fig15_sp500_smile.png")[Aggregated P&L $overline(G)$ (over τ' ≈ 90 days) of a trend on S&P 500 futures against the trend indicator T, τ = 180 days, #C.sp.start to #C.sp.end (the paper's Figs. 4–5). (a) Linear trend, scaled to 1% daily P&L. (b) Sign of the trend. Dashed: theory.]
+
+The linear trend traces the predicted parabola: fitted curvature #num(C.sp.lin.c, d: 4) against
+#num(C.sp.lin_theory_c, d: 4) from theory, intercept #num(C.sp.lin.a, d: 3) against
+#num(C.sp.lin_theory_a, d: 3), R² = #num(C.sp.lin.r2). Capping the position at ±1 turns the parabola into the
+predicted V (slope #num(C.sp.sign_b, d: 3) vs #num(C.sp.sign_theory_b, d: 3), R² = #num(C.sp.sign_r2)). The
+continuous-time theory for the sign rule is approximate; the test suite checks it on simulated random walks.
+
+#mtable(CT.sp_horizons, [Trend P&L on the S&P 500 against the S&P 500 move over the same non-overlapping periods, by horizon (linear trend, τ = 180 days, 1984–2024). Quadratic fit: curvature c and R².], size: 8.5pt) <tbl-horizon>
+
+The convexity only appears at the trend's own horizon. Measured day by day or week by week the curvature is nil; it
+grows with the horizon and dominates at three to twelve months (@tbl-horizon). A monthly scatter of trend P&L
+against S&P 500 returns gives R² = #num(C.sp.naive_monthly.r2), which is why naive plots hardly show the effect.
+
+== Convexity in a real trend fund
+
+The paper replicates the SG CTA Index with a linear trend on about 20 liquid futures, equal risk per market, and finds
+a broad maximum of correlation (above 80%) at τ ≈ 180 days. The SG CTA Index is not freely available, so the
+comparison here uses the public managed-futures fund of Part II (#DF.benchmark.name, monthly excess returns since
+2010). Two replicators are tested: the paper's list as available here (16 futures from 2002; Eurodollar and Short
+Sterling are missing, and the DAX stands in for the EuroStoxx 50) and the 62 futures of Part II.
+
+#fig("fig16_corr_by_tau.png")[Monthly correlation between the replicator and the managed-futures fund (2010–2024) by trend time scale τ (the paper's Fig. 7).]
+
+The correlation rises with τ and flattens from about 180 days, at #num(C.replicator.corr.at("62").at("180")) for the
+62-market replicator and #num(C.replicator.corr.at("16").at("180")) for the 16-market one. This is the same broad
+maximum as in the paper, at somewhat lower levels for a single fund.
+
+#fig("fig17_fund_convexity.png")[The fund against the S&P 500. (a) Monthly returns: the naive view (the paper's Fig. 2). (b) The fund's P&L aggregated over τ' ≈ 90 days against the S&P 500 trend indicator, τ = 180 days (the paper's Fig. 9). Dashed: quadratic fits.]
+
+#mtable(CT.fund_convexity, [Convexity of the fund and of the 16-futures replicator against the S&P 500: naive monthly view vs aggregated view.], size: 8pt, left-cols: 2)
+
+Measured the paper's way, the fund's convexity is clearer than in the naive view (R² #num(C.fund_convexity.naive.r2)
+→ #num(C.fund_convexity.agg.r2)), and the replicator behaves the same way over 2003–2024 (#num(C.fund_convexity.rep_naive.r2)
+→ #num(C.fund_convexity.rep_agg.r2)). The gain is about half the paper's (0.02 → 0.18 on the SG CTA Index,
+2000–2015). The paper explains part of the gap: a diversified trend is convex in its own markets' moves, and only
+partly in the moves of one reference market such as the S&P 500.
+
+== A bound for risk-parity portfolios
+
+The paper's answer to that dilution is eq. (24). Take the equal-risk long-only portfolio of the same markets, a simple
+risk-parity portfolio with daily return $G^"RP" = sum_k w_k R_k$ and trend indicator $T_"RP" = sqrt(tau) L_tau [G^"RP"]$.
+Because the square of an average is at most the average of the squares, the diversified trend's aggregated P&L can
+never fall below $Upsilon (T_"RP"^2 - sum_k w_k L_(tau') [R_k^2])$. This is a strict inequality, not a statistical
+tendency.
+
+#fig("fig18_rp_bound.png")[Aggregated P&L of the 16-futures trend against the trend of the equal-risk portfolio of the same futures, daily from #C.rp_bound.start (the paper's Fig. 10). Dashed: the bound with $⟨R^2⟩ = 1$.]
+
+The exact bound holds on all #num(C.rp_bound.n, d: 0) days, as it must, and the simple parabola with
+$⟨R^2⟩ = 1$ on #pc(C.rp_bound.share_above_parabola) of them. Large moves of a risk-parity portfolio, up or down, over
+about six months are therefore always accompanied by trend profits. The inverse-volatility book below is a
+risk-parity portfolio of this kind, on three assets.
+
+== Trend as an overlay on the inverse-volatility book
+
+The companion study builds a long-only book of the S&P 500, the 10-year Treasury and gold. It uses inverse-volatility
+weights from the trailing year, quarter-end rebalancing, 10 bp costs and a 10% ex-ante volatility target. The same
+rules are run here on futures from 1990, and a trend overlay is added:
+- the paper's linear trend at τ = 180 days on the 62 futures, or on the book's three assets only, or at τ = 40 days;
+- equal risk per market, next-close execution and the costs of Part II;
+- the overlay is scaled to 10% ex-ante volatility, and every combination is rescaled to 10% ex-ante volatility, so
+  that all portfolios carry the same risk.
+
+#mtable(CT.overlay, [The inverse-vol book with and without a trend overlay, #C.overlay.start to #C.overlay.end; combinations rescaled to 10% ex-ante volatility. Quarterly CVaR: mean of the worst 5% of quarters.], size: 7.5pt) <tbl-overlay>
+
+#mtable(CT.stress, [Returns over market stress episodes: the book, and each overlay on its own at 10% volatility.], size: 8pt) <tbl-stress>
+
+At equal risk, the diversified slow trend improves the book on every summary measure except the single worst quarter
+(@tbl-overlay): Sharpe ratio #num(OV("Book alone").sr) → #num(OV("Book + 1 × diversified trend τ=180").sr), maximum
+drawdown #pc(-OV("Book alone").maxdd, d: 0) → #pc(-OV("Book + 1 × diversified trend τ=180").maxdd, d: 0), quarterly
+skew #num(OV("Book alone").skew_q) → #num(OV("Book + 1 × diversified trend τ=180").skew_q). Most of the gain comes
+from adding a positive-return stream with a low correlation to the book (#num(C.overlay.corr_book.div_slow) monthly).
+Trend on the book's own three assets adds much less (Sharpe #num(OV("Book + 1 × 3-asset trend τ=180").sr)):
+diversification across markets matters more than hedging the same assets.
+
+#fig("fig19_overlay_quintiles.png")[Mean return of the trend overlay by quintile of the book's return over the same month (a) or quarter (b).] <fig-quint>
+
+The overlay is not a put on the book. On average it earns *more* when the book does well (@fig-quint), because a
+trend follower is usually long the assets that are rising, and the book holds rising assets most of the time. Its
+protection is episodic and depends on time scale (@tbl-stress). The slow trend made money through the slow bear
+markets: the 2000–02 dot-com bear, 2007–09 and the 2022 rate shock, when stocks and bonds fell together and the book
+lost #pc(-C.stress.at("2022 rate shock").book, d: 0). In the five-week COVID crash the fast trend (τ = 40) helped far
+more than the slow one, and the 2018 sell-off was too quick for the slow trend. This is the paper's warning made concrete:
+a six-month trend cannot hedge a crash that lasts a few weeks.
+
+#fig("fig20_overlay_drawdowns.png")[Drawdowns of the book alone and of the book with the diversified trend overlay, both at 10% volatility.]
+
+== Trend vs options <sec-options>
+
+The paper's last result is that a portfolio of strangles buys the same long-term variance as the trend, at a different
+price: the trend pays the short-term variance realised as it trades, the options pay the implied variance fixed at
+purchase. Options therefore protect against sudden moves that a trend cannot see, but they are sold at a premium. On
+the S&P 500, 1990–2024, the VIX (30-day implied volatility) averaged #pc(C.vrp.iv) against #pc(C.vrp.rv) realised over
+the following month, and exceeded it in #pc(C.vrp.share_iv_above, d: 0) of months: implied variance cost
+#num(C.vrp.var_ratio) times realised variance.
+
+#mtable(CT.options, [S&P 500 protection, 1990–2024: buying 5% out-of-the-money puts every month (CBOE PPUT index) vs adding a trend overlay at 10% volatility. Excess returns over T-bills; episodes as in @tbl-stress.], size: 7.5pt) <tbl-options>
+
+#fig("fig21_protection.png")[Cumulative excess log return of the S&P 500 alone, with monthly 5% puts, and with a trend overlay.]
+
+The put strategy cost #pc(C.options.put_cost) a year and lowered the Sharpe ratio, but it protected best in the COVID
+crash. Trend on the S&P 500 alone did little. The diversified trend overlay roughly doubled the excess return at
+slightly higher volatility, and protected in the slow 2007–09 and 2022 bear markets, much less in March 2020. These are not risk-matched portfolios, so the table shows trade-offs rather than a ranking. The pattern
+is the paper's: options are the better hedge, trend the cheaper one.
+
 = Conclusions and limitations <sec-conc>
 
 *Part I.* The paper's central claims replicate on free data: a significant, drift-independent trend effect across
@@ -450,18 +617,29 @@ This is consistent with the book's argument that diversification and risk sizing
 with the paper's view of trend as a single robust effect: the book's rule and the paper's signal are two ways of
 trading it.
 
+*Part III.* The convexity mechanism of Dao et al. replicates exactly where it is mathematics (the identity, the
+parabola and V on one market, the risk-parity bound), and more weakly where it is empirical: a public trend fund is
+convex in the S&P 500 at the right horizon, but less clearly than the SG CTA Index in the paper. For a long-only
+inverse-volatility book, a diversified slow trend overlay improves risk-adjusted returns, drawdowns and skew at equal
+risk. That protection is episodic and depends on time scale: it covers bear markets that unfold over months, such as
+2022 when stocks and bonds fell together, and not crashes that last a few weeks. Puts cover those, at a cost of
+several percent a year.
+
 *Limitations.* Part I: spot and index proxies, monthly averages, no costs. Part II: data end in March 2024; the
 universe is the set of contracts listed today, so it includes some survivorship and selection; ATR is estimated from
 closes; trades are at the next close, not the next open; costs are today's, scaled by volatility; positions are
-fractional and P&L is not compounded; and the managed-futures comparison uses a single fund.
+fractional and P&L is not compounded; and the managed-futures comparison uses a single fund. Part III: one public
+fund instead of the SG CTA Index; the convexity analysis uses gross P&L, as in the paper; the book is rebuilt on
+futures, not the ETF and UCITS implementation of the companion study; the put comparison uses one listed strategy and
+is not risk-matched.
 
-*Next step.* Trend following as a convex overlay for a long-only book (Dao et al., 2016, _Tail protection for long
-investors_), combined with the inverse-volatility study in
-#link("https://github.com/lwang-genomics/inverse-vol-futures-overlay")[inverse-vol-futures-overlay].
+*Possible extensions.* The SG CTA Index itself, if available; the convexity of Clenow's stop-based rules, whose
+positive skew (Part II) suggests a V-like profile; and a hedge built from actual option prices rather than an index.
 
 = Appendix: code and reproducibility
 
-`uv run trendrep` (Part I) and `uv run trendrep-daily` (Part II) download the raw data once (cached in `data/raw/`,
+`uv run trendrep` (Part I), `uv run trendrep-daily` (Part II) and `uv run trendrep-convexity` (Part III, after
+Part II) download the raw data once (cached in `data/raw/`,
 not committed), run every analysis and write `results/` and `figures/`. `uv run trendrep-report` compiles this PDF,
 and `uv run pytest` runs the tests. The tests check the EMA and P&L against hand calculations and verify that there
 is no look-ahead (changing later prices leaves all earlier signals, positions and P&L unchanged). They also verify
@@ -469,10 +647,15 @@ that random walks give t-stats centred on zero with unit spread, that monthly av
 not at lag 1, that trending series are profitable, that stale prices are not traded, and that the saturation fit and
 the de-biasing recover known parameters. For Part II they check every entry, exit and holding day of the core model
 against its rules, that the filter blocks trades against the trend, the execution lag and P&L, and the cost
-accounting, and that the rules earn nothing on random walks and make money on persistent trends.
+accounting, and that the rules earn nothing on random walks and make money on persistent trends. For Part III they
+check the trend identity exactly on fat-tailed returns, the parabola and V-shape on random walks, the risk-parity
+bound on every day of correlated simulated returns, the volatility target of the book and that the risk estimates
+and the volatility scaling use past data only.
 
 *References.* Y. Lempérière, C. Deremble, P. Seager, M. Potters, J.-P. Bouchaud (2014), "Two centuries of trend
 following", _Journal of Investment Strategies_ 3(3); arXiv:1404.3274. A. F. Clenow (2013), _Following the Trend:
 Diversified Managed Futures Trading_, Wiley. R. Carver, pysystemtrade (GPL-3), data at commit
 #raw(DF.futures_commit.slice(0, 10)). H. Working (1960), "Note on the correlation of first differences of averages in
-a random chain", _Econometrica_ 28(4).
+a random chain", _Econometrica_ 28(4). T.-L. Dao, T.-T. Nguyen, C. Deremble, Y. Lempérière, J.-P. Bouchaud,
+M. Potters (2016), "Tail protection for long investors: trend convexity at work", arXiv:1607.02410. CBOE S&P 500 5%
+Put Protection Index (PPUT); VIX from FRED (VIXCLS).
