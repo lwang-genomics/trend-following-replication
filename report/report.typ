@@ -1,8 +1,14 @@
-// Replication of "Two centuries of trend following" on free data.
-// Build from the repository root: uv run trendrep && uv run trendrep-report
+// Replication of "Two centuries of trend following" on free data (Part I),
+// and Clenow's practitioner rules against the paper's signal on daily futures (Part II).
+// Build from the repository root: uv run trendrep && uv run trendrep-daily && uv run trendrep-report
 #let res = json("../results/results.json")
 #let T = res.tables
 #let F = res.facts
+#let dres = json("../results/results_daily.json")
+#let DT = dres.tables
+#let DF = dres.facts
+#let R(name) = DF.rules_stats.at(name)
+#let SP(key) = DF.spanning.at(key)
 #let num(x, d: 2) = {
   if x == none { return "–" }
   let neg = x < 0
@@ -11,7 +17,7 @@
   (if neg { "−" } else { "" }) + parts.at(0) + (if d > 0 { "." + dec + "0" * (d - dec.len()) } else { "" })
 }
 
-#set document(title: "Trend Following: Replication and Out-of-Sample Test", author: "Liangxi Wang")
+#set document(title: "Trend Following: Replication, Out-of-Sample Test and Practitioner Rules", author: "Liangxi Wang")
 #set page(paper: "a4", margin: (x: 2.2cm, y: 2.2cm), numbering: "1")
 #set text(font: ("Arial", "Helvetica Neue", "Helvetica"), size: 10pt)
 #set par(justify: true, leading: 0.62em)
@@ -23,10 +29,10 @@
 #set figure(gap: 0.6em)
 
 #let fig(path, caption) = figure(image("../figures/" + path, width: 100%), caption: caption)
-#let mtable(t, caption, size: 9pt, left-cols: 1) = figure(
+#let mtable(t, caption, size: 9pt, left-cols: 1, left-also: (), columns: auto) = figure(
   text(size: size)[#set par(justify: false); #table(
-    columns: t.header.len(),
-    align: (x, y) => if x < left-cols { left } else { right },
+    columns: if columns == auto { t.header.len() } else { columns },
+    align: (x, y) => if x < left-cols or x in left-also { left } else { right },
     stroke: none,
     inset: (x: 4pt, y: 3pt),
     table.hline(stroke: 0.8pt),
@@ -40,12 +46,13 @@
 )
 
 #align(center)[
-  #text(size: 19pt)[Trend Following: Replication and Out-of-Sample Test] \
+  #text(size: 19pt)[Trend Following: Replication, Out-of-Sample Test \ and Practitioner Rules] \
   #v(0.3em)
-  #text(size: 12pt)[Lempérière, Deremble, Seager, Potters & Bouchaud (2014), "Two centuries of trend following", \
-    reproduced on free data and tested on the twelve years after publication] \
+  #text(size: 12pt)[Part I: Lempérière, Deremble, Seager, Potters & Bouchaud (2014), "Two centuries of trend
+    following", reproduced on free data and tested after publication. \
+    Part II: the core model of A. Clenow's _Following the Trend_ (2013) against the paper's signal, on daily futures] \
   #v(0.3em)
-  #text(size: 10pt, fill: luma(110))[Liangxi Wang · monthly data #F.sample · October 2026 \
+  #text(size: 10pt, fill: luma(110))[Liangxi Wang · monthly data #F.sample · daily futures 1990-01 → 2024-03 · October 2026 \
     #link("https://github.com/lwang-genomics/trend-following-replication")[github.com/lwang-genomics/trend-following-replication]]
 ]
 #v(1em)
@@ -81,7 +88,36 @@ free public data, checks how the data affect the result, and then asks the quest
 - *150 years of US data* (Shiller, from 1873) give a trend Sharpe of #num(F.long_us.sr) with
   t = #num(F.long_us.t, d: 1), positive in every 50-year block.
 
-= The paper and what is replicated
+Part II takes the practitioner's side. Clenow's _Following the Trend_ argues that a simple, diversified trend
+model with a moving-average filter, breakout entries, a trailing stop and volatility sizing captures much of what
+professional trend followers earn, and that the exact rule matters less than diversification and risk sizing. The
+model is run on #DF.n_markets daily back-adjusted futures (1990 to March 2024, net of costs) next to the paper's
+signal on the same data.
+
+- *Both work, and they are mostly the same bet.* Net Sharpe ratios for 1990–2013 are #num(R("Clenow core").sr_net_in)
+  (Clenow) and #num(R("Paper EMA, 100 d").sr_net_in) (paper's EMA, 100 days ≈ 5 months), and
+  #num(R("Clenow core").sr_net_post) and #num(R("Paper EMA, 100 d").sr_net_post) for 2014–2024. Their monthly
+  returns are #num(R("Clenow core").corr_paper) correlated, and neither has a significant alpha over the other
+  (t = #num(SP("Clenow core on paper EMA (100 d) | 1990–2013").alpha_t, d: 1) and
+  #num(SP("Paper EMA (100 d) on Clenow core | 1990–2013").alpha_t, d: 1)).
+- *The stop changes the shape, not the edge.* Clenow's model is in the market #num(R("Clenow core").in_market * 100, d: 0)%
+  of the time. At equal volatility its worst drawdown is #num(-R("Clenow core").maxdd_10 * 100, d: 0)% against
+  #num(-R("Paper EMA, 100 d").maxdd_10 * 100, d: 0)%, and its monthly skew is #num(R("Clenow core").skew_m) against
+  #num(R("Paper EMA, 100 d").skew_m).
+- *The parameters do not matter much, and cannot be tuned.* Across 30 breakout and stop settings, the net Sharpe ratio
+  ranges from #num(DF.grid.in_min) to #num(DF.grid.in_max) before 2014 and from #num(DF.grid.post_min) to
+  #num(DF.grid.post_max) after. The in-sample ranking does not predict the later one (rank correlation
+  #num(DF.grid.rank_corr)).
+- *A real trend fund.* The two rules together explain #num(DF.benchmark.r2_paper_and_core * 100, d: 0)% of the
+  monthly variance of a public managed-futures fund (#DF.benchmark.name, 2010–2024).
+- *Part I's weak commodities are mostly a data effect.* On the same seven commodities and months, the paper's monthly
+  rule earns a Sharpe ratio of #num(DF.spot_vs_futures.all.spot) on averaged spot prices and
+  #num(DF.spot_vs_futures.all.fut0) on month-end futures. Most of the gap comes from the one-month delay that averaged
+  data force, not from carry.
+
+#text(size: 9pt, fill: luma(90))[Part I: @sec-paper to @sec-us. Part II: @sec-p2 to @sec-spot. Conclusions: @sec-conc.]
+
+= The paper and what is replicated <sec-paper>
 
 The paper defines, for each market and an exponential moving average (EMA) time scale of $n$ months,
 
@@ -175,7 +211,8 @@ positive. Sector by sector, currencies (#num(F.sectors.Currencies.sr) vs 0.57) a
 (#num(F.sectors.Bonds.sr) vs 0.49) match; indices are stronger on the longer spot history. Commodities are the clear
 gap (#num(F.sectors.Commodities.sr) vs 0.80). The paper reports only a 65% spot–futures correlation for commodities,
 because futures add a carry (roll-yield) term that spot prices lack. Averaged monthly commodity prices, and beef as a
-stand-in for live cattle, add noise.
+stand-in for live cattle, add noise. Part II (@sec-spot) tests this on futures: most of the gap comes from the
+one-month delay that averaged data force, not from carry.
 
 = The signal saturates
 
@@ -233,7 +270,7 @@ proxies it does dip below zero: briefly in 1996 (#num(F.rolling10_min, d: 2) at 
 and again around 2018–2021. So that claim does not replicate on this data, even before publication. The likely cause
 is the weaker commodity sector, which carried much of the paper's performance.
 
-= 150 years of US data
+= 150 years of US data <sec-us>
 
 #fig("fig08_us_since_1871.png")[Cumulative trend P&L on the S&P composite (from 1873) and the US 10-year bond (from 1953), Shiller data.]
 
@@ -243,31 +280,199 @@ On US data alone, the trend has a Sharpe of #num(F.long_us.sr) over #num(F.long_
 (t = #num(F.long_us.t, d: 1), drift-removed #num(F.long_us.t_debiased, d: 1)) and is positive in every 50-year
 block, consistent with the paper's long-history finding.
 
-= Conclusions and limitations
 
-The paper's central claims replicate on free data: a significant, drift-independent trend effect across asset
-classes and decades, and saturation of the signal. Its size depends on details the paper does not dwell on. Monthly
-averages fake a trend unless the position is lagged, administered prices must be filtered, interpolated history must
-be excluded, and spot commodities miss most of the futures' trend. After publication the effect weakened to a Sharpe
-ratio of about 0.27, which is low but within what its own history allows.
+= Part II: practitioner rules on daily futures <sec-p2>
 
-Limitations: spot and index proxies instead of futures (no carry; commodities in particular); monthly averages for
-most series; no transaction costs; a fictitious P&L without portfolio-level risk targeting; and 27 markets, not a full
-CTA universe.
+Part I tested the academic version of trend following: one signal, monthly data, no costs. Practitioners trade
+something that looks different. The core model of Clenow's _Following the Trend_ (2013) trades daily, enters on
+breakouts, exits on trailing stops and sizes positions by volatility. The book's thesis is that this kind of simple
+model, run on a diversified futures universe, captures much of what large trend-following funds earn. Part II asks
+three questions:
 
-*Next steps.* (i) Daily futures and the practitioner's version of the rule, the moving-average and breakout system
-with ATR position sizing from A. Clenow's _Following the Trend_. (ii) Trend following as a convex overlay for a
-long-only book (Dao et al., 2016, _Tail protection for long investors_), combined with the inverse-volatility study in
++ Is the practitioner's rule better than, or different from, the paper's signal on the same data?
++ What does each component (filter, breakout, stop) contribute, and do the parameters matter?
++ How closely do both track a real managed-futures fund?
+
+== Data, rules and costs
+
+*Futures.* Daily back-adjusted ("Panama") prices of #DF.n_markets futures from the open-source pysystemtrade project,
+pinned to one commit (#raw(DF.futures_commit.slice(0, 10)), data to 28 March 2024). Back-adjustment shifts history at
+each roll, so price *changes* are those of the contract held, roll yield included. All P&L is therefore computed in
+price points and converted to capital through risk-based sizing; no price level is used. Results start in January 1990
+(#DF.markets_alive_1990 markets), and later contracts join as their data begin.
+
+#mtable(DT.universe, [Futures universe. Cost: median cost per contract and side, as a percentage of the daily ATR.], size: 7.5pt, left-also: (5,), columns: (auto, auto, auto, auto, auto, 1fr)) <tbl-univ>
+
+*Clenow's core model* (parameters as described in the book; `config.ClenowRules`):
+- trend filter: long trades only while the 50-day EMA is above the 100-day EMA, short trades only while below;
+- entry: a close at the highest (lowest) close of the last 50 days, in the filter's direction;
+- exit: a trailing stop 3 ATRs from the best close since entry;
+- size: 0.2% of capital per ATR(100), set at entry and not rebalanced.
+
+*Closes only.* The data have no highs and lows, so the average true range is estimated from closes. On
+#DF.true_range.n front-month futures with daily OHLC (Yahoo Finance, 2000–2024), the 100-day true range averages
+#num(DF.true_range.median) times the mean absolute close-to-close change (range #num(DF.true_range.min) to
+#num(DF.true_range.max), against 2 for a Brownian motion). ATR is therefore #num(DF.true_range.used, d: 1) × the mean
+|Δp| over 100 days. Without this correction the "3 ATR" stop would be about half as wide as the book's.
+
+*The paper's signal on daily data:* position = sign(p − EMA#sub[n]\[p\]) / σ#sub[n], with σ#sub[n] the EMA of |Δp|,
+rebalanced daily, n = 100 days (≈ the paper's 5 months), and the same risk per market as Clenow's model.
+
+*Components.* Three partial models isolate the parts of the core model: _Filter only_ (always positioned with the EMA
+filter), _Breakout only_ (stop-and-reverse on 50-day highs and lows) and _Filter + breakout_ (breakout entries, exit
+when the filter flips).
+
+*Execution and costs.* Decisions use closes up to day t and are traded at the close of day t+1 (the book trades the
+next open). Costs per contract and side are half the bid-ask spread plus commission, from the same project's
+configuration. They are converted to a fraction of each market's recent ATR (median #num(DF.cost_atr_median * 100, d: 1)%)
+and charged at that fraction of the ATR at the time of each trade, so they scale with volatility through history.
+Every roll trades the position twice. These are today's costs, so results are also shown with costs tripled. EURIBOR's
+spread estimate in the source (0.26 points, about 50 ticks) is an evident error and is replaced by one tick. P&L is
+not compounded, and positions are fractional (a large account).
+
+== Practitioner rule vs the paper's signal
+
+#mtable(DT.ladder, [Net Sharpe ratios by rule, 1990–2013 unless stated. Max drawdown and skew over 1990–2024, with each rule scaled to 10% annual volatility.], size: 8.5pt) <tbl-ladder>
+
+#mtable(DT.behaviour, [How the rules trade, 1990–2024. Vol: annual volatility at 0.2% risk per position. Changes: entries, exits and reversals. Open positions: average number. Correlations of monthly net returns.], size: 8pt, columns: (auto, ..range(6).map(_ => 1fr))) <tbl-behaviour>
+
+#fig("fig09_daily_equity.png")[Cumulative net P&L, each rule scaled to 10% annual volatility over 1990–2024 (display only). Shaded: after the paper and the book were published.]
+
+The paper's signal and Clenow's core model earn similar risk-adjusted returns: #num(R("Paper EMA, 100 d").sr_net_in)
+and #num(R("Clenow core").sr_net_in) net before 2014, and #num(R("Paper EMA, 100 d").sr_net_post) and
+#num(R("Clenow core").sr_net_post) after. A paired block bootstrap (63-day blocks) of the Sharpe difference, Clenow
+minus paper, gives #num(DF.sr_diff_core_minus_paper.in.diff) (95% interval #num(DF.sr_diff_core_minus_paper.in.lo) to
+#num(DF.sr_diff_core_minus_paper.in.hi)) before 2014 and #num(DF.sr_diff_core_minus_paper.post.diff)
+(#num(DF.sr_diff_core_minus_paper.post.lo) to #num(DF.sr_diff_core_minus_paper.post.hi)) after. Neither is
+distinguishable from zero.
+
+#mtable(DT.spanning, [Spanning regressions of monthly net returns. Appraisal ratio: annualised alpha over residual volatility.], size: 8.5pt, left-cols: 2) <tbl-span>
+
+The two are largely the same bet. The paper's signal explains #num(SP("Clenow core on paper EMA (100 d) | 1990–2013").r2 * 100, d: 0)%
+of the monthly variance of Clenow's model, and four EMA horizons explain
+#num(SP("Clenow core on 4 EMA horizons | 1990–2013").r2 * 100, d: 0)%. What remains has an appraisal ratio of
+#num(SP("Clenow core on 4 EMA horizons | 1990–2013").appraisal) (t = #num(SP("Clenow core on 4 EMA horizons | 1990–2013").alpha_t, d: 1)),
+which is not significant. The reverse regression gives the same answer
+(t = #num(SP("Paper EMA (100 d) on Clenow core | 1990–2013").alpha_t, d: 1)).
+
+#mtable(DT.ema_horizons, [The paper's signal on daily futures by EMA time scale.], size: 8.5pt)
+
+On daily futures the paper's signal is strongest between 50 and 200 days, as in the paper's monthly Table 1. The
+fastest version (20 days) loses most of its edge to costs.
+
+== What each component does
+
+#fig("fig10_rule_ladder.png")[Net Sharpe ratio of each rule before and after 2014.]
+
+- *The filter carries the edge.* The 50/100-day EMA filter alone earns #num(R("Filter only").sr_net_in) before 2014,
+  as much as anything else here. Breakouts alone earn less (#num(R("Breakout only").sr_net_in)); adding them to the
+  filter changes little (#num(R("Filter + breakout").sr_net_in)).
+- *The trailing stop changes the shape.* It keeps the model out of the market #num(100 - R("Clenow core").in_market * 100, d: 0)%
+  of the time and cuts losing trades early. At equal volatility, the worst drawdown falls from
+  #num(-R("Filter + breakout").maxdd_10 * 100, d: 0)% to #num(-R("Clenow core").maxdd_10 * 100, d: 0)%, and monthly
+  skew rises from #num(R("Filter + breakout").skew_m) to #num(R("Clenow core").skew_m). The in-sample Sharpe ratio
+  is a little lower, and with costs tripled it drops more than the filter's
+  (#num(R("Clenow core").sr_stress_in) vs #num(R("Filter only").sr_stress_in)).
+- *After 2014* every rule is weaker. The stop-based model held up best (#num(R("Clenow core").sr_net_post)), but the
+  differences between rules are well within noise over ten years.
+
+== Do the parameters matter?
+
+#fig("fig11_robustness.png")[Net Sharpe ratio of the core model for breakout windows and trailing stops (in true-range ATRs); the filter stays at 50/100 days. Boxed: the book's setting.]
+
+All 30 settings are profitable in both periods: #num(DF.grid.in_min) to #num(DF.grid.in_max) before 2014 and
+#num(DF.grid.post_min) to #num(DF.grid.post_max) after. This supports the book's view that a reasonable trend model
+does not depend on fine-tuning. It also shows why tuning does not help. Before 2014 the widest stops look best;
+after 2014 the 2-ATR stop does, and the rank correlation between the two periods' grids is #num(DF.grid.rank_corr).
+Choosing the in-sample optimum would not have improved the out-of-sample result.
+
+== Sectors and years
+
+#mtable(DT.daily_sectors, [Net Sharpe ratio by sector.], size: 8.5pt, columns: (auto, ..range(5).map(_ => 1fr)))
+
+#fig("fig14_daily_sectors.png")[Net Sharpe ratio by sector, before and after 2014.]
+
+Every sector contributes before 2014. After 2014, rates and energy carry both rules, while metals and currencies
+lose. The sector pattern of the two rules is similar.
+
+#fig("fig12_yearly.png")[Calendar-year net P&L at 10% volatility, 1990–2023.]
+
+Year by year the two rules move together (correlation #num(DF.yearly_corr)). They have
+#DF.yearly_losing.at("Clenow core") and #DF.yearly_losing.at("Paper EMA, 100 d") losing years out of 34, and both had
+their best year in 2008, when equity markets fell sharply.
+
+== A real trend fund
+
+#fig("fig13_benchmark.png")[Monthly excess return over T-bills of a public managed-futures mutual fund (#DF.benchmark.name, after fees), and the two rules scaled to the fund's volatility (before fees).]
+
+Clenow's thesis is that simple rules capture much of what professional trend followers do. As one test, the rules
+are compared with a public managed-futures mutual fund (#DF.benchmark.name), whose monthly total return
+(distributions reinvested, minus T-bills) is available from #DF.benchmark.start to #DF.benchmark.end. Its returns are
+#num(DF.benchmark.corr.at("Clenow core")) correlated with Clenow's model and
+#num(DF.benchmark.corr.at("Paper EMA, 100 d")) with the paper's signal; together the two explain
+#num(DF.benchmark.r2_paper_and_core * 100, d: 0)% of its monthly variance. The fund's Sharpe ratio over the period
+is #num(DF.benchmark.sr_fund) after fees, against #num(DF.benchmark.sr.at("Clenow core")) and
+#num(DF.benchmark.sr.at("Paper EMA, 100 d")) for the rules before fees and management costs. One fund is not the
+industry, but this one is largely explained by simple trend rules.
+
+== Back to Part I: are spot commodities the problem? <sec-spot>
+
+Part I found commodities far weaker on spot data than in the paper (Sharpe #num(F.sectors.Commodities.sr) vs 0.80)
+and attributed it to the futures' carry. Month-end futures prices allow a direct test: the paper's monthly rule
+($n = 5$) on the seven Part I commodities, spot and futures side by side, over the same months of 1990–2013.
+
+#mtable(DT.spot_vs_futures, [Paper's monthly rule on spot (monthly averages, lag 1 as in Part I) and futures (month-end), same months up to 2013. Long-only: the drift term, lag 1.], size: 7.5pt) <tbl-spot>
+
+On futures at the same lag, the seven-commodity trend Sharpe rises from #num(DF.spot_vs_futures.all.spot) to
+#num(DF.spot_vs_futures.all.fut). Month-end prices can be traded without the one-month delay that averaged data need
+(Part I, @tbl-avg); doing so raises it to #num(DF.spot_vs_futures.all.fut0), close to the paper's 0.80 (measured on a
+longer period). The long-only drift is *lower* on futures (#num(DF.spot_vs_futures.all.fut_mu) vs
+#num(DF.spot_vs_futures.all.spot_mu)), which is the carry cost of holding commodities in contango. So the commodity
+shortfall of Part I is mostly due to the delay that monthly averages force on the rule, and only partly to carry.
+For currencies and bonds the delay costs nothing (Part I), so commodity trends seem to be faster. With 18–24 years
+per market these Sharpe ratios have standard errors of about 0.2, so the split is approximate.
+
+= Conclusions and limitations <sec-conc>
+
+*Part I.* The paper's central claims replicate on free data: a significant, drift-independent trend effect across
+asset classes and decades, and saturation of the signal. Its size depends on details the paper does not dwell on.
+Monthly averages fake a trend unless the position is lagged, administered prices must be filtered, and interpolated
+history must be excluded. On spot data the effect weakened after publication to a Sharpe ratio of about 0.27, which
+is low but within what its own history allows.
+
+*Part II.* On daily futures net of costs, Clenow's core model and the paper's signal earn similar Sharpe ratios
+(#num(R("Clenow core").sr_net_in) and #num(R("Paper EMA, 100 d").sr_net_in) before 2014,
+#num(R("Clenow core").sr_net_post) and #num(R("Paper EMA, 100 d").sr_net_post) after) and are mostly the same
+trend exposure. Neither adds significant alpha
+to the other. The practitioner's stop does not add edge; it trades fewer days, with smaller drawdowns and more
+positive skew. The results hold across a wide range of parameters, but the best in-sample settings did not stay best.
+This is consistent with the book's argument that diversification and risk sizing matter more than the exact rule, and
+with the paper's view of trend as a single robust effect: the book's rule and the paper's signal are two ways of
+trading it.
+
+*Limitations.* Part I: spot and index proxies, monthly averages, no costs. Part II: data end in March 2024; the
+universe is the set of contracts listed today, so it includes some survivorship and selection; ATR is estimated from
+closes; trades are at the next close, not the next open; costs are today's, scaled by volatility; positions are
+fractional and P&L is not compounded; and the managed-futures comparison uses a single fund.
+
+*Next step.* Trend following as a convex overlay for a long-only book (Dao et al., 2016, _Tail protection for long
+investors_), combined with the inverse-volatility study in
 #link("https://github.com/lwang-genomics/inverse-vol-futures-overlay")[inverse-vol-futures-overlay].
 
 = Appendix: code and reproducibility
 
-`uv run trendrep` downloads the raw data once (cached in `data/raw/`, not committed), runs every analysis and writes
-`results/` and `figures/`. `uv run trendrep-report` compiles this PDF, and `uv run pytest` runs the tests. The tests
-check the EMA and P&L against hand calculations and verify that there is no look-ahead (changing later prices leaves
-all earlier signals and P&L unchanged). They also verify that random walks give t-stats centred on zero with unit
-spread, that monthly averaging fakes a trend at lag 0 but not at lag 1, that trending series are profitable, that
-stale prices are not traded, and that the saturation fit and the de-biasing recover known parameters.
+`uv run trendrep` (Part I) and `uv run trendrep-daily` (Part II) download the raw data once (cached in `data/raw/`,
+not committed), run every analysis and write `results/` and `figures/`. `uv run trendrep-report` compiles this PDF,
+and `uv run pytest` runs the tests. The tests check the EMA and P&L against hand calculations and verify that there
+is no look-ahead (changing later prices leaves all earlier signals, positions and P&L unchanged). They also verify
+that random walks give t-stats centred on zero with unit spread, that monthly averaging fakes a trend at lag 0 but
+not at lag 1, that trending series are profitable, that stale prices are not traded, and that the saturation fit and
+the de-biasing recover known parameters. For Part II they check every entry, exit and holding day of the core model
+against its rules, that the filter blocks trades against the trend, the execution lag and P&L, and the cost
+accounting, and that the rules earn nothing on random walks and make money on persistent trends.
 
-*Reference.* Y. Lempérière, C. Deremble, P. Seager, M. Potters, J.-P. Bouchaud (2014), "Two centuries of trend
-following", _Journal of Investment Strategies_ 3(3); arXiv:1404.3274.
+*References.* Y. Lempérière, C. Deremble, P. Seager, M. Potters, J.-P. Bouchaud (2014), "Two centuries of trend
+following", _Journal of Investment Strategies_ 3(3); arXiv:1404.3274. A. F. Clenow (2013), _Following the Trend:
+Diversified Managed Futures Trading_, Wiley. R. Carver, pysystemtrade (GPL-3), data at commit
+#raw(DF.futures_commit.slice(0, 10)). H. Working (1960), "Note on the correlation of first differences of averages in
+a random chain", _Econometrica_ 28(4).

@@ -161,3 +161,129 @@ def long_us(cum: pd.DataFrame, name: str) -> None:
     legend_top(ax, ncol=3)
     style_dates(ax, cum.dropna(how="all").index, base=20)
     finish(fig, name)
+
+
+# ====================================================================== Part II: daily futures
+
+CORE_C = DALE_METHOD_COLORS["scVelo"]  # Set1 green: Clenow's core model
+FUND_C = "#4D4D4D"
+
+
+def _rule_color(name: str) -> str:
+    return TREND_C if name.startswith("Paper") else CORE_C if name.startswith("Clenow") else DALE_NONSIG
+
+
+def daily_equity(series: dict[str, pd.Series], split: str, name: str) -> None:
+    fig, ax = plt.subplots()
+    for k, s in reversed(list(series.items())):
+        lw = DALE_LINE_WIDTH if _rule_color(k) == DALE_NONSIG else DALE_LINE_EMPH
+        ax.plot(s.index, s.cumsum() * 100, color=_rule_color(k), linewidth=lw, label=k)
+    end = max(s.index[-1] for s in series.values())
+    shade_oos(ax, split, end)
+    ax.set_ylabel("Cumulative net P&L\n(% of capital, at 10% vol)")
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles[::-1], labels[::-1], ncol=3, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2)
+    style_dates(ax, pd.DatetimeIndex([min(s.index[0] for s in series.values()), end]))
+    finish(fig, name)
+
+
+def rule_ladder(sr: dict[str, tuple[float, float]], name: str) -> None:
+    fig, ax = plt.subplots()
+    names = list(sr)
+    x = np.arange(len(names))
+    w = 0.38
+    ax.bar(x - w / 2, [sr[k][0] for k in names], width=w, color=[_rule_color(k) for k in names],
+           edgecolor="#4D4D4D", linewidth=0.7, label="1990–2013")
+    ax.bar(x + w / 2, [sr[k][1] for k in names], width=w, color="white", edgecolor=[_rule_color(k) for k in names],
+           hatch="///", linewidth=1.2, label="2014–2024")
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.set_xticks(x, [k.replace(" + ", " +\n").replace(" only", "\nonly").replace("Paper EMA, ", "Paper EMA\n")
+                      .replace("Clenow core", "Clenow\ncore") for k in names])
+    ax.set_ylabel("Sharpe ratio, net of costs")
+    leg = ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2)
+    for h in leg.legend_handles:
+        h.set_facecolor("white" if h.get_hatch() else DALE_NONSIG)
+        h.set_edgecolor("#4D4D4D")
+    finish(fig, name)
+
+
+def robustness(grid: dict[str, np.ndarray], breakouts: list[int], stops: list[float], name: str,
+               default: tuple[int, float] | None = None) -> None:
+    fig, axes = plt.subplots(1, 2, sharey=True)
+    vmax = max(np.nanmax(g) for g in grid.values())
+    vmin = min(0.0, min(np.nanmin(g) for g in grid.values()))
+    cmap = plt.get_cmap("mako_r")
+    for ax, (key, title), letter in zip(axes, [("in", "1990–2013"), ("post", "2014–2024")], "ab"):
+        g = grid[key]
+        im = ax.imshow(g, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto", origin="lower")
+        for i in range(g.shape[0]):
+            for j in range(g.shape[1]):
+                r, gr, b, _ = cmap((g[i, j] - vmin) / (vmax - vmin))
+                light = 0.299 * r + 0.587 * gr + 0.114 * b > 0.5
+                ax.text(j, i, f"{g[i, j]:.2f}".replace("-", "−"), ha="center", va="center", fontsize=11,
+                        color="black" if light else "white")
+        if default is not None:
+            i, j = breakouts.index(default[0]), stops.index(default[1])
+            ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False, edgecolor=OOS_C, linewidth=2.5))
+        ax.set_xticks(range(len(stops)), [f"{s:g}" for s in stops])
+        ax.set_yticks(range(len(breakouts)), [str(b) for b in breakouts])
+        ax.set_xlabel("Trailing stop (ATRs)")
+        ax.set_title(title, fontsize=14)
+        ax.spines[["left", "bottom"]].set_visible(False)
+        ax.tick_params(length=0)
+        panel_label(ax, letter)
+    axes[0].set_ylabel("Breakout window (days)")
+    cb = fig.colorbar(im, ax=axes, fraction=0.03, pad=0.02)
+    cb.set_label("Sharpe ratio, net")
+    cb.outline.set_visible(False)
+    FIG_DIR.mkdir(exist_ok=True)
+    save_slide_wide(FIG_DIR / name, fig, width=11.0, height=4.6)
+    plt.close(fig)
+    print(f"Saved {(FIG_DIR / name).relative_to(ROOT)}")
+
+
+def yearly(y: pd.DataFrame, split: str, name: str) -> None:
+    fig, ax = plt.subplots()
+    x = np.arange(len(y))
+    w = 0.42
+    for off, k in [(-w / 2, y.columns[0]), (w / 2, y.columns[1])]:
+        ax.bar(x + off, y[k] * 100, width=w, color=_rule_color(k), label=k)
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    first_post = list(y.index).index(int(split[:4]))
+    ax.axvspan(first_post - 0.5, len(y) - 0.5, color=OOS_C, alpha=0.08, linewidth=0)
+    ticks = [i for i, yr in enumerate(y.index) if yr % 5 == 0]
+    ax.set_xticks(ticks, [str(y.index[i]) for i in ticks])
+    ax.set_xlim(-0.6, len(y) - 0.4)
+    ax.set_ylabel("Calendar-year net P&L\n(% of capital, at 10% vol)")
+    legend_top(ax, ncol=2)
+    finish(fig, name)
+
+
+def benchmark(fund: pd.Series, rules: dict[str, pd.Series], fund_name: str, name: str) -> None:
+    fig, ax = plt.subplots()
+    ax.plot(fund.index, fund.cumsum() * 100, color=FUND_C, linewidth=DALE_LINE_EMPH, label=fund_name)
+    for k, s in rules.items():
+        ax.plot(s.index, s.cumsum() * 100, color=_rule_color(k), linewidth=DALE_LINE_WIDTH, label=k)
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.set_ylabel("Cumulative excess return\n(%, rules at the fund's vol)")
+    legend_top(ax, ncol=3)
+    style_dates(ax, fund.index, base=2)
+    finish(fig, name)
+
+
+def daily_sectors(sr: dict[str, dict[str, tuple[float, float]]], core: str, paper: str, name: str) -> None:
+    fig, ax = plt.subplots()
+    secs = list(sr)
+    x = np.arange(len(secs))
+    w = 0.2
+    for i, (k, per, label) in enumerate([(core, 0, f"{core}, 1990–2013"), (core, 1, f"{core}, 2014–24"),
+                                         (paper, 0, "Paper EMA, 1990–2013"), (paper, 1, "Paper EMA, 2014–24")]):
+        post = per == 1
+        ax.bar(x + (i - 1.5) * w, [sr[s][k][per] for s in secs], width=w, label=label,
+               color="white" if post else _rule_color(k), edgecolor=_rule_color(k), hatch="///" if post else None,
+               linewidth=1.2 if post else 0)
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.set_xticks(x, secs)
+    ax.set_ylabel("Sharpe ratio, net")
+    ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), borderaxespad=0.2, fontsize=12)
+    finish(fig, name)

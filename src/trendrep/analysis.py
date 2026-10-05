@@ -116,3 +116,55 @@ def oos_comparison(monthly: pd.Series, split: str, seed: int = 0) -> dict[str, f
         "p_oos_le_observed": float((sr_sims <= sr_out).mean()),
         "sr_sim_5": float(np.percentile(sr_sims, 5)), "sr_sim_95": float(np.percentile(sr_sims, 95)),
     }
+
+
+# ------------------------------------------------------------------ Part II: daily strategies
+
+
+def sharpe_daily(daily: pd.Series) -> float:
+    """Annualised Sharpe ratio of a daily excess-return series (252 days a year)."""
+    d = daily.dropna()
+    return float(d.mean() / d.std(ddof=1) * np.sqrt(252))
+
+
+def max_drawdown(daily: pd.Series) -> float:
+    """Largest peak-to-trough fall of the cumulative (non-compounded) P&L, in the series' units."""
+    cum = daily.fillna(0.0).cumsum()
+    return float((cum - cum.cummax()).min())
+
+
+def ols(y: pd.Series, X: pd.DataFrame) -> dict:
+    """OLS of y on X with an intercept: coefficients, t-stats, R² and residual standard deviation."""
+    df = pd.concat([y.rename("_y"), X], axis=1).dropna()
+    A = np.column_stack([np.ones(len(df)), df[X.columns].to_numpy()])
+    b = df["_y"].to_numpy()
+    coef, *_ = np.linalg.lstsq(A, b, rcond=None)
+    resid = b - A @ coef
+    s2 = resid @ resid / (len(b) - A.shape[1])
+    se = np.sqrt(np.diag(s2 * np.linalg.inv(A.T @ A)))
+    names = ["alpha", *X.columns]
+    return {"coef": dict(zip(names, coef.tolist())), "t": dict(zip(names, (coef / se).tolist())),
+            "r2": float(1 - resid @ resid / ((b - b.mean()) @ (b - b.mean()))), "n": len(b),
+            "resid_sd": float(np.sqrt(s2))}
+
+
+def sharpe_diff_bootstrap(a: pd.Series, b: pd.Series, block: int, n_boot: int, seed: int = 0) -> dict:
+    """Moving-block bootstrap of SR(a) − SR(b) on paired daily returns.
+
+    Resampling the same blocks for both series keeps their correlation. Returns the observed
+    difference, a 95% percentile interval and the share of resamples with a difference ≤ 0.
+    """
+    df = pd.concat([a, b], axis=1).dropna().to_numpy()
+    n = len(df)
+    rng = np.random.default_rng(seed)
+    diff = []
+    for _ in range(0, n_boot, 200):  # chunks keep memory small
+        starts = rng.integers(0, n - block, size=(200, n // block + 1))
+        idx = (starts[:, :, None] + np.arange(block)).reshape(200, -1)[:, :n]
+        x = df[idx]  # 200 × n × 2
+        sr = x.mean(axis=1) / x.std(axis=1, ddof=1) * np.sqrt(252)
+        diff.append(sr[:, 0] - sr[:, 1])
+    diff = np.concatenate(diff)[:n_boot]
+    obs = sharpe_daily(pd.Series(df[:, 0])) - sharpe_daily(pd.Series(df[:, 1]))
+    return {"diff": float(obs), "lo": float(np.percentile(diff, 2.5)), "hi": float(np.percentile(diff, 97.5)),
+            "p_le_0": float((diff <= 0).mean())}
