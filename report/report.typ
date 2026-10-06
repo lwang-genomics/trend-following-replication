@@ -594,8 +594,8 @@ several percent a year.
 universe is the set of contracts listed today, so it includes some survivorship and selection; ATR is estimated from
 closes; trades are at the next close, not the next open; costs are today's, scaled by volatility; positions are
 fractional and P&L is not compounded; and the managed-futures comparison uses a single fund. Part III: one public
-fund instead of the SG CTA Index; the convexity analysis uses gross P&L, as in the paper; the book is rebuilt on
-futures, not the ETF and UCITS implementation of the companion study; the put comparison uses one listed strategy and
+fund instead of the SG CTA Index; the convexity analysis uses gross P&L, as in the paper; the book uses the
+companion study's rules and data source, but a different window (1991 to March 2024 vs 2001–2026); the put comparison uses one listed strategy and
 is not risk-matched.
 
 *Possible extensions.* The SG CTA Index itself, if available; the convexity of Clenow's stop-based rules, whose
