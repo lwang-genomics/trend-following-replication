@@ -172,7 +172,9 @@ src/trendrep/
 
 ---
 
-An independent study by Liangxi Wang, computational scientist (Genomics PhD), not affiliated with any employer, the
-authors of the papers or the book. Implemented with AI-assisted coding (Claude Code); research questions, design
-decisions, data checks and interpretation are my own. Research code, **not investment advice**. MIT licence. Data are
-downloaded, not redistributed, and remain subject to their providers' terms (pysystemtrade data: GPL-3).
+- **Author:** Liangxi Wang, computational scientist (Genomics PhD); independent, not affiliated with any employer,
+  the authors of the papers or the book
+- **AI use:** implemented with AI-assisted coding (Claude Code); the research questions, design decisions, data
+  checks and interpretation are my own
+- **Licence:** MIT. Research code, **not investment advice**
+- **Data:** downloaded, not redistributed, and subject to their providers' terms (pysystemtrade data: GPL-3)
